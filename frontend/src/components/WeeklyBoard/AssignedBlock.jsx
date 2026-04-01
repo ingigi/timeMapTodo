@@ -1,89 +1,112 @@
-import { X, GripHorizontal, CheckCircle2 } from "lucide-react";
+import { useRef, useState } from "react";
+import { X, Plus, Minus } from "lucide-react";
+import { attachDragPreview } from "../../utils/dragPreview";
 
 export default function AssignedBlock({
   assignment,
   task,
   onDelete,
   onResizeStart,
-  onCompleteResizeStart,
+  onQuickAdjust,
   sourceDayIdx
 }) {
+  const dragCleanupRef = useRef(null);
+  const [isDragging, setIsDragging] = useState(false);
+
   if (!task) return null;
 
   return (
-    <div 
-      className="w-full px-1 py-0.5"
-      style={{ height: `${assignment.duration * 4}rem` }}
-    >
-      <div className="relative group w-full h-full border border-black/10 shadow-sm rounded-md transition-all select-none overflow-hidden hover:brightness-110">
-        {/* Top Part: Completed (Non-draggable) */}
-        {((assignment.completedDuration || 0) > 0) && (
+    <div className="w-full px-0.5 py-0.5">
+      <div
+        draggable
+        onDragStart={(e) => {
+          setIsDragging(true);
+          e.dataTransfer.effectAllowed = "move";
+          e.dataTransfer.setData("sourceDayIdx", sourceDayIdx);
+          e.dataTransfer.setData("assignmentId", assignment.id);
+          e.dataTransfer.setData("dragType", "all");
+          e.dataTransfer.setData("dragDuration", String(assignment.duration));
+          e.dataTransfer.setData("dragTitle", task.title || "タスク");
+          e.dataTransfer.setData("dragColor", task.color || "#94a3b8");
+          dragCleanupRef.current = attachDragPreview(e, {
+            title: task.title || "タスク",
+            duration: assignment.duration,
+            color: task.color || "#94a3b8"
+          });
+        }}
+        onDragEnd={() => {
+          setIsDragging(false);
+          dragCleanupRef.current?.();
+          dragCleanupRef.current = null;
+        }}
+        className={`group relative flex min-h-[5.25rem] w-full cursor-grab select-none overflow-hidden rounded-2xl border border-slate-200 bg-white transition-all active:cursor-grabbing hover:shadow-md ${isDragging ? "scale-[0.98] opacity-55" : "shadow-sm"}`}
+        style={{
+          borderLeft: `3px solid ${task.color || "#94a3b8"}`
+        }}
+      >
+        <div className="absolute left-3 top-3">
           <div
-            className="absolute top-0 left-0 w-full hover:brightness-110 cursor-default"
-            style={{ 
-              height: `${(assignment.completedDuration / assignment.duration) * 100}%`,
-              backgroundColor: task.color || '#94a3b8',
-              backgroundImage: 'repeating-linear-gradient(45deg, transparent, transparent 10px, rgba(0,0,0,0.15) 10px, rgba(0,0,0,0.15) 20px)'
-            }}
-          />
-        )}
-
-        {/* Bottom Part: Incomplete Drag Handle */}
-        {((assignment.completedDuration || 0) < assignment.duration) && (
-          <div
-            draggable
-            onDragStart={(e) => {
-              e.dataTransfer.setData('sourceDayIdx', sourceDayIdx);
-              e.dataTransfer.setData('assignmentId', assignment.id);
-              e.dataTransfer.setData('dragType', (assignment.completedDuration || 0) === 0 ? 'all' : 'incomplete');
-            }}
-            className="absolute bottom-0 left-0 w-full cursor-grab active:cursor-grabbing"
-            style={{ 
-              height: `${(1 - (assignment.completedDuration || 0) / assignment.duration) * 100}%`,
-              backgroundColor: task.color || '#94a3b8'
-            }}
-          />
-        )}
-
-        <div className="relative z-10 pointer-events-none text-white font-medium text-xs p-2 truncate flex items-start justify-between h-full bg-gradient-to-b from-black/10 to-transparent">
-          <div className="flex flex-col drop-shadow-sm pointer-events-auto">
-            <span className="font-bold">{task.title}</span>
-            <span className="opacity-90">{assignment.completedDuration ? `${assignment.completedDuration}h / ` : ''}{assignment.duration}h</span>
-          </div>
-          
-          <div className="opacity-0 group-hover:opacity-100 focus-within:opacity-100 flex items-center transition-opacity bg-black/20 rounded backdrop-blur-sm pointer-events-auto shadow-sm">
-            <button 
-              onClick={(e) => { e.stopPropagation(); onDelete(assignment.id); }}
-              className="p-1.5 hover:bg-black/30 rounded transition-colors"
-              title="削除"
-            >
-              <X className="h-3.5 w-3.5" />
-            </button>
+            className="rounded-full px-2 py-0.5 text-[10px] font-bold tracking-[0.16em] text-white"
+            style={{ backgroundColor: task.color || "#94a3b8" }}
+          >
+            SLICE
           </div>
         </div>
 
-        {/* Draggable Completion Boundary */}
-        <div 
-          className="absolute left-0 right-0 h-4 z-20 cursor-ns-resize"
-          style={{ 
-            top: `calc(${(assignment.completedDuration / assignment.duration) * 100}% - 8px)`,
-          }}
-          onMouseDown={(e) => {
-            e.stopPropagation();
-            onCompleteResizeStart(e, assignment.id);
-          }}
-          title="完了時間を調整"
-        />
+        <div className="flex min-w-0 flex-1 flex-col p-3 pt-10">
+          <div className="mb-2">
+            <div className="text-[14px] font-black leading-snug text-slate-800 break-words">
+              {task.title || "無題"}
+            </div>
+          </div>
 
-        <div 
-          onMouseDown={(e) => {
+          <div className="mt-auto flex items-end justify-between gap-3">
+            <div className="min-w-0">
+              <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">Allocated</div>
+              <div className="mt-1 flex items-baseline gap-1">
+                <span className="text-xl font-black leading-none text-slate-900">{assignment.duration}</span>
+                <span className="text-sm font-bold leading-none text-slate-400">h</span>
+              </div>
+              <div className="mt-1 text-[10px] font-medium text-slate-400">
+                残り {task.remainingTime.toFixed(1)}h
+              </div>
+            </div>
+
+            <div className="flex items-center gap-1 rounded-xl border border-slate-100 bg-slate-50 p-1">
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onQuickAdjust(sourceDayIdx, assignment.id, -1);
+                }}
+                className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-white hover:text-red-600"
+                title="1時間減らす"
+              >
+                <Minus className="h-3.5 w-3.5" />
+              </button>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onQuickAdjust(sourceDayIdx, assignment.id, 1);
+                }}
+                className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-white hover:text-blue-600"
+                title="1時間増やす"
+              >
+                <Plus className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <button
+          onClick={(e) => {
             e.stopPropagation();
-            onResizeStart(e, assignment.id);
+            onDelete(assignment.id);
           }}
-          className="absolute bottom-0 left-0 right-0 h-3 cursor-ns-resize flex items-center justify-center opacity-0 group-hover:opacity-100 hover:bg-black/20 transition-all"
+          className="absolute right-2 top-2 z-20 rounded-full border border-slate-100 bg-white/90 p-1 shadow-sm transition-all hover:bg-red-50 hover:text-red-600"
+          title="削除"
         >
-          <GripHorizontal className="h-3 w-3 text-white/70" />
-        </div>
+          <X className="h-2.5 w-2.5" />
+        </button>
       </div>
     </div>
   );

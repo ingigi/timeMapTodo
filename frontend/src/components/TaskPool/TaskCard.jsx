@@ -1,170 +1,193 @@
 import clsx from "clsx";
-import { Plus, Minus, Trash2, ChevronDown, ChevronRight } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Plus, Minus, Trash2 } from "lucide-react";
+import { attachDragPreview } from "../../utils/dragPreview";
 
-export default function TaskCard({ 
-  task, 
+export default function TaskCard({
+  task,
   allTasks = [],
   boardState = {},
-  isActive, 
-  onSelect, 
-  onAdjustTime, 
+  isActive,
+  onSelect,
+  onAdjustTime,
   onDelete,
   onToggleExpand,
   onUpdateTitle,
   onAddSubtask,
+  onOpenDetail,
+  onAddAssignment,
   hasChildren,
   isExpanded,
-  level = 0 
+  level = 0
 }) {
-  const { title, category, color, totalTime } = task;
-  
-  let assignedTime = 0;
-  let completedTime = 0;
+  const { id, title, totalTime, color } = task;
+  const titleInputRef = useRef(null);
+  const dragCleanupRef = useRef(null);
+  const [isEditingTitle, setIsEditingTitle] = useState(() => !title?.trim());
+  const [isDragging, setIsDragging] = useState(false);
 
+  let assignedTime = 0;
   if (boardState && allTasks.length > 0) {
     const descendants = new Set();
-    const collect = (id) => {
-      descendants.add(id);
-      allTasks.filter(t => t.parentId === id).forEach(child => collect(child.id));
+    const collect = (nodeId) => {
+      descendants.add(nodeId);
+      allTasks.filter((item) => item.parentId === nodeId).forEach((child) => collect(child.id));
     };
-    collect(task.id);
+    collect(id);
 
-    Object.values(boardState).flat().forEach(a => {
-      if (descendants.has(a.taskId)) {
-        assignedTime += a.duration;
-        completedTime += (a.completedDuration || 0);
+    Object.values(boardState).flat().forEach((assignment) => {
+      if (descendants.has(assignment.taskId)) {
+        assignedTime += assignment.duration;
       }
     });
   }
 
-  const unassignedTime = Math.max(0, totalTime - assignedTime);
-  const percentCompleted = totalTime > 0 ? (completedTime / totalTime) * 100 : 0;
-  const percentAssigned = totalTime > 0 ? ((assignedTime - completedTime) / totalTime) * 100 : 0;
+  const remainingTime = Math.max(0, totalTime - assignedTime);
+  const currentRemaining = task.remainingTime !== undefined ? task.remainingTime : remainingTime;
+  const isCompleted = currentRemaining <= 0;
+
+  useEffect(() => {
+    if (isEditingTitle && titleInputRef.current) {
+      titleInputRef.current.focus();
+      titleInputRef.current.select();
+    }
+  }, [isEditingTitle]);
+
+  useEffect(() => {
+    if (!title?.trim()) {
+      setIsEditingTitle(true);
+    }
+  }, [title]);
 
   return (
     <div
-      onClick={() => onSelect(task.id)}
       className={clsx(
-        "cursor-pointer rounded-md bg-white p-3 shadow-sm border transition-all",
-        isActive
-          ? "border-2 opacity-100 ring-2 ring-opacity-50"
-          : "border-slate-200 opacity-90 hover:opacity-100 hover:border-slate-300 hover:-translate-y-0.5"
+        "group relative mb-6 select-none rounded-xl border-2 p-4 shadow-sm transition-all hover:shadow-md",
+        isActive ? "border-blue-500" : "border-black/5 hover:border-black/10",
+        isCompleted ? "bg-slate-50 opacity-70 grayscale-[0.5]" : "bg-white",
+        isDragging && "scale-[0.98] opacity-55"
       )}
-      style={{
-        borderLeft: `${level > 0 ? 4 : 6}px solid ${color}`,
-        borderColor: isActive ? color : undefined,
+      onClick={() => onOpenDetail(id)}
+      draggable={!isEditingTitle}
+      onDragStart={(e) => {
+        if (isEditingTitle) {
+          e.preventDefault();
+          return;
+        }
+
+        setIsDragging(true);
+        e.dataTransfer.effectAllowed = "copy";
+        e.dataTransfer.setData("taskId", id);
+        e.dataTransfer.setData("dragType", "new");
+        e.dataTransfer.setData("dragDuration", "1");
+        e.dataTransfer.setData("dragTitle", title || "タスク");
+        e.dataTransfer.setData("dragColor", color || "#94a3b8");
+        dragCleanupRef.current = attachDragPreview(e, {
+          title: title || "タスク",
+          duration: 1,
+          color: color || "#94a3b8"
+        });
+      }}
+      onDragEnd={() => {
+        setIsDragging(false);
+        dragCleanupRef.current?.();
+        dragCleanupRef.current = null;
       }}
     >
-      <div className="mb-3 flex justify-between items-start group">
-        <div className="flex items-start gap-2 flex-1 min-w-0">
-          {hasChildren && (
-            <button 
-              onClick={(e) => { e.stopPropagation(); onToggleExpand?.(task.id); }}
-              className="mt-0.5 p-0.5 rounded hover:bg-slate-100 text-slate-500 transition-colors shrink-0"
+      <div className="mb-4 flex items-start justify-between gap-2">
+        {isEditingTitle ? (
+          <input
+            ref={titleInputRef}
+            value={title}
+            onChange={(e) => onUpdateTitle(id, e.target.value)}
+            onClick={(e) => e.stopPropagation()}
+            onDragStart={(e) => e.stopPropagation()}
+            onBlur={() => setIsEditingTitle(false)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.currentTarget.blur();
+              }
+            }}
+            placeholder="タスク名を入力"
+            className="flex-1 border-none bg-transparent text-lg font-black leading-tight text-slate-800 outline-none placeholder:text-slate-300"
+          />
+        ) : (
+          <h3
+            className={clsx(
+              "flex-1 line-clamp-2 text-lg font-black leading-tight transition-colors",
+              isCompleted ? "text-slate-400 line-through" : "text-slate-800 group-hover:text-blue-600"
+            )}
+          >
+            {title}
+          </h3>
+        )}
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onDelete(id);
+          }}
+          className="shrink-0 rounded-lg border border-slate-100 bg-white p-1.5 opacity-0 shadow-sm transition-opacity group-hover:opacity-100 hover:bg-red-50 hover:text-red-600"
+          title="削除"
+        >
+          <Trash2 className="h-3.5 w-3.5" />
+        </button>
+      </div>
+
+      <div className="mb-3 rounded-xl border border-dashed border-slate-100 bg-slate-50/70 px-3 py-2">
+        <div className="mb-1 text-[10px] font-bold uppercase tracking-widest text-slate-400">次に切り出す</div>
+        <div className="flex items-center justify-between text-sm font-semibold text-slate-600">
+          <span>1.0h を配置</span>
+          <span className="rounded-full bg-white px-2 py-0.5 text-[11px] text-slate-500 shadow-sm">Drag</span>
+        </div>
+      </div>
+
+      <div className="flex flex-col">
+        <div className="flex items-end justify-between">
+          <div className="flex flex-col">
+            <span className="mb-1 text-[10px] font-bold uppercase tracking-widest leading-none text-slate-400">残り</span>
+            <div className="flex items-baseline gap-1">
+              <span className={clsx("text-3xl font-black leading-none transition-all", isCompleted ? "text-slate-400" : "text-slate-900")}>
+                {currentRemaining.toFixed(1)}
+              </span>
+              <span className="text-lg font-black leading-none text-slate-400 lowercase">h</span>
+            </div>
+            <div className="mt-1 text-[11px] font-medium text-slate-400">割当済み {assignedTime.toFixed(1)}h</div>
+          </div>
+
+          <div className="flex items-center rounded-lg border border-slate-100 bg-slate-50 p-1">
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onAdjustTime(id, -1);
+              }}
+              className="flex h-8 w-8 items-center justify-center rounded-md text-slate-400 transition-all hover:bg-white hover:text-red-500 hover:shadow-sm"
             >
-              {isExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+              <Minus className="h-4 w-4" />
             </button>
-          )}
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2">
-              <div 
-                className="w-2.5 h-2.5 rounded-full shrink-0 mt-0.5 border border-black/10" 
-                style={{ backgroundColor: color }} 
-                title="タスクカラー"
-              />
-              <input
-                type="text"
-                value={title}
-                onChange={(e) => onUpdateTitle(task.id, e.target.value)}
-                className={clsx(
-                  "font-semibold text-slate-800 bg-transparent outline-none w-full focus:ring-1 focus:ring-blue-400 rounded px-1 -ml-1 transition-colors hover:bg-slate-50 focus:bg-white", 
-                  level > 0 ? "text-sm" : ""
-                )}
-                placeholder="タスク名を入力..."
-                autoFocus={!title}
-                onClick={(e) => e.stopPropagation()}
-              />
-            </div>
-            {level === 0 && category && <p className="text-xs text-slate-500 mt-0.5 px-1 truncate ml-4">{category}</p>}
+            <div className="mx-1 h-4 w-px bg-slate-200" />
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onAdjustTime(id, 1);
+              }}
+              className="flex h-8 w-8 items-center justify-center rounded-md text-slate-400 transition-all hover:bg-white hover:text-blue-500 hover:shadow-sm"
+            >
+              <Plus className="h-4 w-4" />
+            </button>
           </div>
-        </div>
-        <div className="opacity-0 group-hover:opacity-100 focus-within:opacity-100 flex items-center gap-1 shrink-0 ml-2 -mt-1 -mr-1">
-          <button 
-            onClick={(e) => { e.stopPropagation(); onAddSubtask(task.id); }}
-            className="p-1 rounded text-slate-400 hover:text-blue-500 hover:bg-slate-100 transition-colors"
-            title="サブタスクを追加"
-          >
-            <Plus className="w-3.5 h-3.5" />
-          </button>
-          <button 
-            onClick={(e) => { e.stopPropagation(); onDelete(task.id); }}
-            className="p-1 rounded text-slate-400 hover:text-red-500 hover:bg-slate-100 transition-colors"
-            title="タスクを削除"
-          >
-            <Trash2 className="w-3.5 h-3.5" />
-          </button>
         </div>
       </div>
-      
-      <div>
-        <div className="mb-2 flex flex-col gap-2">
-          <div className="flex items-center justify-between text-[11px] text-slate-500">
-            <div className="flex flex-wrap gap-x-3 gap-y-1">
-              <span className="flex items-center gap-1" title="完了済み">
-                <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: color }}></div>
-                完了: <span className="text-slate-700 font-bold">{completedTime.toFixed(1)}h</span>
-              </span>
-              <span className="flex items-center gap-1" title="カレンダー配置済み（未完了）">
-                <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: color, opacity: 0.4 }}></div>
-                配置: <span className="text-slate-700 font-bold">{(assignedTime - completedTime).toFixed(1)}h</span>
-              </span>
-              <span className="flex items-center gap-1" title="未配置（残り）">
-                <div className="w-1.5 h-1.5 rounded-full bg-slate-200"></div>
-                残り: <span className="text-slate-700 font-bold">{unassignedTime.toFixed(1)}h</span>
-              </span>
-            </div>
-          </div>
-          
-          <div className="flex items-center justify-between">
-            <div className="text-xs font-semibold text-slate-600 flex items-baseline gap-1">
-              <span>合計</span>
-              <span className="text-slate-800 text-sm">{totalTime.toFixed(1)}h</span>
-              <span className="text-slate-400 font-normal">({Math.round(percentCompleted)}%)</span>
-            </div>
-            
-            {/* Time Adjust Controls */}
-            <div className="flex bg-slate-100 rounded border border-slate-200 items-center shrink-0">
-              <button 
-                onClick={(e) => { e.stopPropagation(); onAdjustTime(task.id, -1); }} 
-                className="p-1 hover:bg-slate-200 transition-colors rounded-l text-slate-600"
-                title="タスクの合計時間を1時間減らす"
-              >
-                <Minus className="w-3 h-3" />
-              </button>
-              <div className="w-px h-3 bg-slate-300"></div>
-              <button 
-                onClick={(e) => { e.stopPropagation(); onAdjustTime(task.id, 1); }} 
-                className="p-1 hover:bg-slate-200 transition-colors rounded-r text-slate-600"
-                title="タスクの合計時間を1時間増やす"
-              >
-                <Plus className="w-3 h-3" />
-              </button>
-            </div>
-          </div>
-        </div>
-        <div className="h-1.5 w-full rounded-full bg-slate-100 overflow-hidden flex">
-          <div
-            className="h-full transition-all duration-300"
-            style={{ width: `${percentCompleted}%`, backgroundColor: color }}
-            title={`完了: ${completedTime}h`}
-          ></div>
-          <div
-            className="h-full transition-all duration-300 opacity-40"
-            style={{ width: `${percentAssigned}%`, backgroundColor: color }}
-            title={`配置済み (未完了): ${assignedTime - completedTime}h`}
-          ></div>
-        </div>
-      </div>
+
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          onAddSubtask(id);
+        }}
+        className="absolute -bottom-4 left-1/2 z-10 flex h-8 w-8 -translate-x-1/2 items-center justify-center rounded-full border-2 border-slate-100 bg-white text-slate-400 shadow-sm transition-all hover:border-blue-200 hover:bg-blue-50 hover:text-blue-600"
+        title="子タスクを追加"
+      >
+        <Plus className="h-4 w-4" />
+      </button>
     </div>
   );
 }

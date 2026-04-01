@@ -2,7 +2,7 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import MainLayout from './components/layout/MainLayout';
 import TaskPool from './components/TaskPool/TaskPool';
 import CalendarArea from './components/CalendarArea/CalendarArea';
-import { getCapacityForDate } from './utils/dateUtils';
+import HandDrawnPopup from './components/Common/HandDrawnPopup';
 
 const TASK_COLORS = [
   '#3B82F6', // Blue
@@ -16,11 +16,42 @@ const TASK_COLORS = [
 ];
 
 const MOCK_TASKS = [
-  { id: 'p1', title: 'Q4 プロダクトローンチ', category: 'プロダクトチーム', color: TASK_COLORS[0], totalTime: 7.0, isExpanded: true },
-  { id: 't1', parentId: 'p1', title: '市場分析', color: TASK_COLORS[0], totalTime: 4.0 },
-  { id: 't2', parentId: 'p1', title: 'ユーザーペルソナ作成', color: TASK_COLORS[0], totalTime: 3.0 },
-  { id: 't3', title: 'API コアリファクタリング', category: 'エンジニアリングチーム', color: TASK_COLORS[2], totalTime: 8.0 },
+  { id: 'p1', title: 'Q4 プロダクトローンチ', category: 'プロダクトチーム', color: TASK_COLORS[0], totalTime: 7.0, isExpanded: true, tags: ['Strategic'], deadline: '2026-04-30', description: 'Q4の主力プロダクトのローンチ計画' },
+  { id: 't1', parentId: 'p1', title: '市場分析', color: TASK_COLORS[0], totalTime: 4.0, tags: ['Analysis'], deadline: '2026-04-10', description: '競合他社の動向調査' },
+  { id: 't2', parentId: 'p1', title: 'ユーザーペルソナ作成', color: TASK_COLORS[0], totalTime: 3.0, tags: ['Design'], deadline: '2026-04-15', description: 'ターゲットユーザーの詳細定義' },
+  { id: 't3', title: 'API コアリファクタリング', category: 'エンジニアリングチーム', color: TASK_COLORS[2], totalTime: 8.0, tags: ['Dev', 'Refactor'], deadline: '2026-04-20', description: 'バックエンドAPIの最適化' },
 ];
+
+const getTaskStatus = (taskId, tasks, boardState) => {
+  const descendants = new Set();
+  const collect = (id) => {
+    descendants.add(id);
+    tasks.filter(t => t.parentId === id).forEach(child => collect(child.id));
+  };
+  collect(taskId);
+
+  let assignedTotal = 0;
+  let hasFutureOrToday = false;
+  const todayStr = new Date().toISOString().split('T')[0];
+
+  Object.entries(boardState).forEach(([dateKey, assignments]) => {
+    assignments.forEach(a => {
+      if (descendants.has(a.taskId)) {
+        assignedTotal += a.duration;
+        if (dateKey >= todayStr) {
+          hasFutureOrToday = true;
+        }
+      }
+    });
+  });
+
+  const task = tasks.find(t => t.id === taskId);
+  if (!task) return 'NotStarted';
+
+  if (assignedTotal === 0) return 'NotStarted';
+  if (assignedTotal >= task.totalTime && !hasFutureOrToday) return 'Completed';
+  return 'InProgress';
+};
 
 const BLOCK_HEIGHT_PX = 64; // 4rem = 64px roughly
 
@@ -67,15 +98,18 @@ const enforceHierarchicalTime = (tasks, modifiedTaskId) => {
 function App() {
   const [appState, setAppState] = useState({
     tasks: MOCK_TASKS,
-    boardState: {}, // `dateKey` (YYYY-MM-DD) -> array of { id, taskId, duration, completedDuration }
-    capacities: [8, 8, 8, 8, 8, 0, 0] // 8h default for Mon-Fri, 0 for Sat-Sun
+    boardState: {} // `dateKey` (YYYY-MM-DD) -> array of { id, taskId, duration, completedDuration }
   });
   const [selectedTaskId, setSelectedTaskId] = useState(null);
   const [baseDate, setBaseDate] = useState(new Date());
   const [viewType, setViewType] = useState('week'); // 'week' | 'month'
+  const [filterConfig, setFilterConfig] = useState({ status: 'all', tag: 'all' });
+  const [sortConfig, setSortConfig] = useState({ key: 'deadline', order: 'asc' });
+  const [editingTask, setEditingTask] = useState(null); // For Detail Popup
   
   const resizingRef = useRef(null);
   const completionResizingRef = useRef(null);
+  const saveTimeoutRef = useRef(null); // 保存処理のデバウンス用
   const [isLoaded, setIsLoaded] = useState(false);
 
   useEffect(() => {
@@ -96,13 +130,29 @@ function App() {
 
   useEffect(() => {
     if (isLoaded && window.api && window.api.saveData) {
-      window.api.saveData(appState);
-    }
-  }, [appState, isLoaded]);
+      // 既存のタイマーがあればクリアする
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+      }
 
-  const handleUpdateCapacities = useCallback((newCapacities) => {
-    setAppState(prev => ({ ...prev, capacities: newCapacities }));
-  }, []);
+      // 1000ms待機してから保存を実行する
+      saveTimeoutRef.current = setTimeout(() => {
+        window.api.saveData(appState).then(result => {
+          if (result && !result.success) {
+            console.error("Save failed:", result.error);
+          }
+        }).catch(err => {
+          console.error("Save error:", err);
+        });
+      }, 1000);
+    }
+
+    return () => {
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+      }
+    };
+  }, [appState, isLoaded]);
 
   const handleCreateInlineTask = useCallback((parentId = null) => {
     setAppState(prev => {
@@ -110,8 +160,8 @@ function App() {
       const parentTask = parentId ? prev.tasks.find(t => t.id === parentId) : null;
       
       const nextColor = TASK_COLORS[prev.tasks.length % TASK_COLORS.length];
+      const newTaskId = `task_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
 
-      const newTaskId = `t_${Date.now()}`;
       newTasks.push({
         id: newTaskId,
         title: '', 
@@ -119,7 +169,10 @@ function App() {
         color: nextColor,
         totalTime: 1.0,
         parentId: parentId,
-        isExpanded: true
+        isExpanded: true,
+        tags: [],
+        deadline: new Date().toISOString().split('T')[0],
+        description: ''
       });
 
       if (parentId) {
@@ -135,9 +188,19 @@ function App() {
   const handleUpdateTaskTitle = useCallback((taskId, newTitle) => {
     setAppState(prev => {
       const taskIdx = prev.tasks.findIndex(t => t.id === taskId);
-      if (taskIdx === -1 || prev.tasks[taskIdx].title === newTitle) return prev;
+      if (taskIdx === -1) return prev;
       const newTasks = [...prev.tasks];
       newTasks[taskIdx] = { ...newTasks[taskIdx], title: newTitle };
+      return { ...prev, tasks: newTasks };
+    });
+  }, []);
+
+  const handleUpdateTaskDetails = useCallback((taskId, updates) => {
+    setAppState(prev => {
+      const taskIdx = prev.tasks.findIndex(t => t.id === taskId);
+      if (taskIdx === -1) return prev;
+      const newTasks = [...prev.tasks];
+      newTasks[taskIdx] = { ...newTasks[taskIdx], ...updates };
       return { ...prev, tasks: newTasks };
     });
   }, []);
@@ -223,7 +286,6 @@ function App() {
       if (!assignmentToMove) return prev;
 
       const targetAssignments = prev.boardState[targetDateKey] || [];
-      const targetCapacity = getCapacityForDate(targetDateKey, prev.capacities);
       
       let durationToMove = assignmentToMove.duration;
       let completedToMove = assignmentToMove.completedDuration || 0;
@@ -245,20 +307,8 @@ function App() {
       const targetTotalExcludingMoved = targetAssignments.filter(a => a.id !== assignmentId).reduce((sum, a) => sum + a.duration, 0)
         + (sourceDateKey === targetDateKey && dragType !== 'all' ? remainingDurationInSource : 0);
 
-      // Check capacity
-      if (targetTotalExcludingMoved + durationToMove > targetCapacity) return prev; 
-
       let newSourceAssignments = [...sourceAssignments];
-      if (dragType === 'all' || remainingDurationInSource === 0) {
-        newSourceAssignments = sourceAssignments.filter(a => a.id !== assignmentId);
-      } else {
-        const assignIdx = newSourceAssignments.findIndex(a => a.id === assignmentId);
-        newSourceAssignments[assignIdx] = {
-           ...newSourceAssignments[assignIdx],
-           duration: remainingDurationInSource,
-           completedDuration: remainingCompletedInSource
-        };
-      }
+      newSourceAssignments = sourceAssignments.filter(a => a.id !== assignmentId);
 
       let newTargetAssignments = sourceDateKey === targetDateKey ? newSourceAssignments : [...targetAssignments];
       const existingInTargetIdx = newTargetAssignments.findIndex(a => a.taskId === assignmentToMove.taskId && a.id !== assignmentId);
@@ -266,15 +316,13 @@ function App() {
       if (existingInTargetIdx >= 0) {
         newTargetAssignments[existingInTargetIdx] = {
            ...newTargetAssignments[existingInTargetIdx],
-           duration: newTargetAssignments[existingInTargetIdx].duration + durationToMove,
-           completedDuration: (newTargetAssignments[existingInTargetIdx].completedDuration || 0) + completedToMove
+           duration: newTargetAssignments[existingInTargetIdx].duration + durationToMove
         };
       } else {
         newTargetAssignments.push({
            ...assignmentToMove,
-           id: dragType === 'all' ? assignmentToMove.id : `evt_${Date.now()}_${Math.random()}`,
-           duration: durationToMove,
-           completedDuration: completedToMove
+           id: `evt_${Date.now()}_${Math.random()}`,
+           duration: durationToMove
         });
       }
 
@@ -299,131 +347,18 @@ function App() {
     });
   }, []);
 
-  const applyResize = useCallback((dateKey, assignmentId, newDuration) => {
-    setAppState(prev => {
-      const dayAssignments = prev.boardState[dateKey] || [];
-      const assignIdx = dayAssignments.findIndex(a => a.id === assignmentId);
-      if (assignIdx === -1) return prev;
-      
-      const assignment = dayAssignments[assignIdx];
-      if (newDuration < 1) return prev; 
 
-      const diff = newDuration - assignment.duration;
-      if (diff === 0) return prev; 
-
-      const taskIdx = prev.tasks.findIndex(t => t.id === assignment.taskId);
-      if (taskIdx === -1) return prev;
-      
-      if (diff > 0) {
-        const unassigned = prev.tasks[taskIdx].totalTime - getTaskAssignedTime(assignment.taskId, prev.tasks, prev.boardState);
-        if (unassigned < diff) return prev; 
-      }
-      
-      const maxCapacity = getCapacityForDate(dateKey, prev.capacities);
-      const currentTotal = dayAssignments.reduce((sum, a) => sum + a.duration, 0);
-      if (currentTotal + diff > maxCapacity) return prev; 
-
-      const newAssignments = [...dayAssignments];
-      const clampedCompleted = Math.min(newDuration, assignment.completedDuration || 0);
-
-      newAssignments[assignIdx] = { ...assignment, duration: newDuration, completedDuration: clampedCompleted };
-
-      return { ...prev, boardState: { ...prev.boardState, [dateKey]: newAssignments } };
-    });
-  }, []);
-
-  const handleResizeMove = useCallback((e) => {
-    if (!resizingRef.current) return;
-    const { dateKey, assignmentId, startY, startDuration } = resizingRef.current;
-    
-    const deltaY = e.clientY - startY;
-    const deltaHours = Math.round(deltaY / BLOCK_HEIGHT_PX);
-    const newDuration = Math.max(1, startDuration + deltaHours);
-    
-    applyResize(dateKey, assignmentId, newDuration);
-  }, [applyResize]);
-
-  const handleResizeEnd = useCallback(function onResizeEnd() {
-    resizingRef.current = null;
-    document.removeEventListener('mousemove', handleResizeMove);
-    document.removeEventListener('mouseup', onResizeEnd);
-  }, [handleResizeMove]);
-
-  const applyCompleteResize = useCallback((dateKey, assignmentId, newCompleted) => {
-    setAppState(prev => {
-      const dayAssignments = prev.boardState[dateKey] || [];
-      const assignIdx = dayAssignments.findIndex(a => a.id === assignmentId);
-      if (assignIdx === -1) return prev;
-      
-      const assignment = dayAssignments[assignIdx];
-      const clampedCompleted = Math.max(0, Math.min(assignment.duration, newCompleted));
-      
-      if (clampedCompleted === (assignment.completedDuration || 0)) return prev;
-
-      const newAssignments = [...dayAssignments];
-      newAssignments[assignIdx] = { ...assignment, completedDuration: clampedCompleted };
-      return { ...prev, boardState: { ...prev.boardState, [dateKey]: newAssignments } };
-    });
-  }, []);
-
-  const handleCompleteResizeMove = useCallback((e) => {
-    if (!completionResizingRef.current) return;
-    const { dateKey, assignmentId, startY, startCompleted } = completionResizingRef.current;
-    
-    const deltaY = e.clientY - startY;
-    const deltaHours = Math.round(deltaY / BLOCK_HEIGHT_PX);
-    const newCompleted = Math.max(0, startCompleted + deltaHours);
-    
-    applyCompleteResize(dateKey, assignmentId, newCompleted);
-  }, [applyCompleteResize]);
-
-  const handleCompleteResizeEnd = useCallback(function onCompleteResizeEnd() {
-    completionResizingRef.current = null;
-    document.removeEventListener('mousemove', handleCompleteResizeMove);
-    document.removeEventListener('mouseup', onCompleteResizeEnd);
-  }, [handleCompleteResizeMove]);
-
-  const handleCompleteResizeStart = useCallback((e, dateKey, assignmentId) => {
-    e.preventDefault();
-    const assignment = appState.boardState[dateKey]?.find(a => a.id === assignmentId);
-    if (!assignment) return;
-    
-    completionResizingRef.current = { dateKey, assignmentId, startY: e.clientY, startCompleted: assignment.completedDuration || 0 };
-    
-    document.addEventListener('mousemove', handleCompleteResizeMove);
-    document.addEventListener('mouseup', handleCompleteResizeEnd);
-  }, [appState.boardState, handleCompleteResizeMove, handleCompleteResizeEnd]);
-
-  const handleAddAssignment = useCallback((e, dateKey) => {
-    e.preventDefault();
-    if (!selectedTaskId) return;
-
-    const task = appState.tasks.find(t => t.id === selectedTaskId);
+  const handleAddAssignmentFromSidebar = useCallback((taskId, dateKey) => {
+    const task = appState.tasks.find(t => t.id === taskId);
     if (!task) return;
-    const assignedTime = getTaskAssignedTime(selectedTaskId, appState.tasks, appState.boardState);
+    const assignedTime = getTaskAssignedTime(taskId, appState.tasks, appState.boardState);
     if (task.totalTime - assignedTime <= 0) return;
 
-    const maxCapacity = getCapacityForDate(dateKey, appState.capacities);
     const dayAssignments = appState.boardState[dateKey] || [];
-    const totalAssigned = dayAssignments.reduce((sum, a) => sum + a.duration, 0);
-    if (totalAssigned >= maxCapacity) return; 
-
-    const existingAssignment = dayAssignments.find(a => a.taskId === selectedTaskId);
-    const assignmentId = existingAssignment ? existingAssignment.id : `evt_${Date.now()}_${Math.random()}`;
-    const startDuration = existingAssignment ? existingAssignment.duration + 1 : 1;
 
     setAppState(prev => {
-      const taskIdx = prev.tasks.findIndex(t => t.id === selectedTaskId);
-      if (taskIdx === -1) return prev;
-      
-      const unassigned = prev.tasks[taskIdx].totalTime - getTaskAssignedTime(selectedTaskId, prev.tasks, prev.boardState);
-      if (unassigned <= 0) return prev;
-      
       const prevDayAssigments = prev.boardState[dateKey] || [];
-      const currentTotal = prevDayAssigments.reduce((sum, a) => sum + a.duration, 0);
-      if (currentTotal >= getCapacityForDate(dateKey, prev.capacities)) return prev; 
-
-      const existingAssignIdx = prevDayAssigments.findIndex(a => a.taskId === selectedTaskId);
+      const existingAssignIdx = prevDayAssigments.findIndex(a => a.taskId === taskId);
       let newAssignments = [...prevDayAssigments];
 
       if (existingAssignIdx >= 0) {
@@ -433,31 +368,21 @@ function App() {
         };
       } else {
         newAssignments.push({
-          id: assignmentId,
-          taskId: selectedTaskId,
-          duration: 1,
-          completedDuration: 0
+          id: `evt_${Date.now()}_${Math.random()}`,
+          taskId: taskId,
+          duration: 1
         });
       }
 
       return { ...prev, boardState: { ...prev.boardState, [dateKey]: newAssignments } };
     });
+  }, [appState.tasks, appState.boardState]);
 
-    resizingRef.current = { dateKey, assignmentId, startY: e.clientY, startDuration };
-    document.addEventListener('mousemove', handleResizeMove);
-    document.addEventListener('mouseup', handleResizeEnd);
-  }, [selectedTaskId, appState.tasks, appState.boardState, appState.capacities, handleResizeMove, handleResizeEnd]);
-
-  const handleResizeStart = useCallback((e, dateKey, assignmentId) => {
+  const handleAddAssignment = useCallback((e, dateKey) => {
     e.preventDefault();
-    const assignment = appState.boardState[dateKey]?.find(a => a.id === assignmentId);
-    if (!assignment) return;
-    
-    resizingRef.current = { dateKey, assignmentId, startY: e.clientY, startDuration: assignment.duration };
-    
-    document.addEventListener('mousemove', handleResizeMove);
-    document.addEventListener('mouseup', handleResizeEnd);
-  }, [appState.boardState, handleResizeMove, handleResizeEnd]);
+    if (!selectedTaskId) return;
+    handleAddAssignmentFromSidebar(selectedTaskId, dateKey);
+  }, [selectedTaskId, handleAddAssignmentFromSidebar]);
 
   // Handle explicit adjustment from MonthView buttons
   const handleQuickAdjust = useCallback((dateKey, assignmentId, delta) => {
@@ -481,20 +406,51 @@ function App() {
         const unassigned = prev.tasks[taskIdx].totalTime - getTaskAssignedTime(assignment.taskId, prev.tasks, prev.boardState);
         if (unassigned < delta) return prev; 
 
-        const maxCapacity = getCapacityForDate(dateKey, prev.capacities);
-        const currentTotal = dayAssignments.reduce((sum, a) => sum + a.duration, 0);
-        if (currentTotal + delta > maxCapacity) return prev; 
       }
 
       const newAssignments = [...dayAssignments];
-      const clampedCompleted = Math.min(newDuration, assignment.completedDuration || 0);
-
-      newAssignments[assignIdx] = { ...assignment, duration: newDuration, completedDuration: clampedCompleted };
+      newAssignments[assignIdx] = { ...assignment, duration: newDuration };
       return { ...prev, boardState: { ...prev.boardState, [dateKey]: newAssignments } };
     });
   }, []);
 
-  const selectedTask = appState.tasks.find(t => t.id === selectedTaskId) || null;
+  const tasksWithRemainingTime = appState.tasks.map(t => ({
+    ...t,
+    remainingTime: t.totalTime - getTaskAssignedTime(t.id, appState.tasks, appState.boardState)
+  }));
+
+  const filteredTasks = tasksWithRemainingTime
+    .filter(t => {
+      if (filterConfig.status === 'all') return true;
+      const status = getTaskStatus(t.id, appState.tasks, appState.boardState);
+      return status.toLowerCase() === filterConfig.status.toLowerCase();
+    })
+    .filter(t => {
+      if (filterConfig.tag === 'all') return true;
+      return t.tags?.includes(filterConfig.tag);
+    })
+    .sort((a, b) => {
+      const key = sortConfig.key;
+      const order = sortConfig.order === 'asc' ? 1 : -1;
+      
+      if (key === 'deadline') {
+        return (a.deadline || '').localeCompare(b.deadline || '') * order;
+      }
+      if (key === 'remainingTime') {
+        return (a.remainingTime - b.remainingTime) * order;
+      }
+      if (key === 'title') {
+        return (a.title || '').localeCompare(b.title || '') * order;
+      }
+      if (key === 'status') {
+         const sa = getTaskStatus(a.id, appState.tasks, appState.boardState);
+         const sb = getTaskStatus(b.id, appState.tasks, appState.boardState);
+         return sa.localeCompare(sb) * order;
+      }
+      return 0;
+    });
+
+  const selectedTask = tasksWithRemainingTime.find(t => t.id === selectedTaskId) || null;
 
   if (!isLoaded) {
     return <div className="flex items-center justify-center h-screen bg-[#F8F9FB] text-slate-500 font-medium">データを読み込み中...</div>;
@@ -504,7 +460,8 @@ function App() {
     <MainLayout>
       <div className="flex-1 w-1/3 min-w-[320px] max-w-[400px]">
         <TaskPool 
-          tasks={appState.tasks} 
+          tasks={filteredTasks} 
+          allTasks={tasksWithRemainingTime}
           boardState={appState.boardState}
           selectedTaskId={selectedTaskId} 
           onSelectTask={setSelectedTaskId} 
@@ -513,6 +470,12 @@ function App() {
           onCreateInlineTask={handleCreateInlineTask}
           onDeleteTask={handleDeleteTask}
           onUpdateTaskTitle={handleUpdateTaskTitle}
+          onOpenDetail={setEditingTask}
+          filterConfig={filterConfig}
+          setFilterConfig={setFilterConfig}
+          sortConfig={sortConfig}
+          setSortConfig={setSortConfig}
+          onAddAssignment={handleAddAssignmentFromSidebar}
         />
       </div>
       <div className="flex-[2] rounded-md bg-white p-6 shadow-sm border border-slate-200 flex flex-col overflow-hidden min-w-[800px] relative">
@@ -522,18 +485,22 @@ function App() {
           viewType={viewType}
           setViewType={setViewType}
           boardState={appState.boardState}
-          tasks={appState.tasks}
-          capacities={appState.capacities}
+          tasks={tasksWithRemainingTime}
           selectedTask={selectedTask}
           onAddAssignment={handleAddAssignment}
+          onAddAssignmentFromSidebar={handleAddAssignmentFromSidebar}
           onDeleteAssignment={handleDeleteAssignment}
-          onResizeStart={handleResizeStart}
-          onCompleteResizeStart={handleCompleteResizeStart}
-          onUpdateCapacities={handleUpdateCapacities}
           onMoveAssignment={handleMoveAssignment}
           onQuickAdjust={handleQuickAdjust}
         />
       </div>
+      {editingTask && (
+        <HandDrawnPopup 
+          task={appState.tasks.find(t => t.id === editingTask)} 
+          onClose={() => setEditingTask(null)}
+          onUpdate={handleUpdateTaskDetails}
+        />
+      )}
     </MainLayout>
   );
 }
