@@ -8,11 +8,12 @@ export default function DayColumn({
   isToday,
   assignments,
   tasks,
-  onAddAssignment,
+  hoveredTaskId,
   onAddAssignmentFromSidebar,
   onDeleteAssignment,
   onMoveAssignment,
-  onQuickAdjust
+  onQuickAdjust,
+  onHoverTask
 }) {
   const [isDragOver, setIsDragOver] = useState(false);
   const [preview, setPreview] = useState(null);
@@ -25,26 +26,20 @@ export default function DayColumn({
     const sourceDayIdx = dataTransfer.getData("sourceDayIdx");
     const isSameDayMove = sourceDayIdx === dateKey;
     const nextTotal = isSameDayMove ? totalAssignedDuration : totalAssignedDuration + dragDuration;
-
-    setPreview({
-      duration: dragDuration,
-      title: dragTitle,
-      color: dragColor,
-      nextTotal
-    });
+    setPreview({ duration: dragDuration, title: dragTitle, color: dragColor, nextTotal });
   };
 
   return (
     <div className="flex min-w-[140px] flex-1 flex-col border-r border-slate-200">
-      <div className="sticky top-0 z-20 border-b border-slate-100 bg-white p-2 text-center">
+      <div className="sticky top-0 z-20 border-b border-slate-100 bg-white p-3 text-center">
         <div className={`text-[10px] font-bold uppercase tracking-tighter ${isToday ? "text-blue-600" : "text-slate-400"}`}>
           {dayName}
         </div>
         <div className="mt-1 flex items-center justify-center gap-2">
-          <div className={`flex h-6 w-6 items-center justify-center rounded-full text-sm font-bold ${isToday ? "bg-blue-600 text-white" : "text-slate-700"}`}>
+          <div className={`flex h-7 w-7 items-center justify-center rounded-full text-sm font-bold ${isToday ? "bg-blue-600 text-white" : "text-slate-700"}`}>
             {dateNum}
           </div>
-          <div className="inline-block rounded px-1 text-[10px] font-semibold text-slate-400">
+          <div className="inline-block rounded-full bg-slate-50 px-2 py-1 text-[10px] font-semibold text-slate-500">
             合計 {totalAssignedDuration}h
           </div>
         </div>
@@ -80,24 +75,19 @@ export default function DayColumn({
         }}
       >
         {preview && (
-          <div className="pointer-events-none absolute inset-x-2 top-3 z-20 rounded-2xl border border-dashed border-blue-300 bg-white/92 p-3 shadow-lg backdrop-blur-sm">
-            <div className="mb-1 text-[10px] font-bold uppercase tracking-[0.22em] text-blue-500">Preview</div>
-            <div className="flex items-center justify-between gap-2">
-              <div className="min-w-0">
-                <div className="truncate text-xs font-semibold text-slate-700">{preview.title}</div>
-                <div className="mt-1 text-[11px] font-medium text-slate-500">+{preview.duration}h を割り当て</div>
-              </div>
-              <div
-                className="shrink-0 rounded-full px-2.5 py-1 text-[11px] font-bold text-white"
-                style={{ backgroundColor: preview.color }}
-              >
+          <div className="pointer-events-none absolute inset-x-2 top-3 z-20 rounded-2xl border border-dashed border-blue-300 bg-white/94 p-3 shadow-lg backdrop-blur-sm">
+            <div className="mb-1 text-[10px] font-bold uppercase tracking-[0.22em] text-blue-500">Time Slice Preview</div>
+            <div className="truncate text-xs font-semibold text-slate-700">{preview.title}</div>
+            <div className="mt-2 flex items-center justify-between gap-2">
+              <span className="text-[11px] font-medium text-slate-500">+{preview.duration}h を配置</span>
+              <span className="rounded-full px-2.5 py-1 text-[11px] font-bold text-white" style={{ backgroundColor: preview.color }}>
                 合計 {preview.nextTotal}h
-              </div>
+              </span>
             </div>
           </div>
         )}
 
-        <div className="relative z-10 flex h-full w-full flex-col p-0.5">
+        <div className="relative z-10 flex h-full w-full flex-col p-1">
           {assignments.map((assignment) => {
             const task = tasks.find((item) => item.id === assignment.taskId);
             return (
@@ -105,8 +95,10 @@ export default function DayColumn({
                 key={assignment.id}
                 assignment={assignment}
                 task={task}
+                isRelated={hoveredTaskId === assignment.taskId}
                 onDelete={onDeleteAssignment}
                 onQuickAdjust={onQuickAdjust}
+                onHoverTask={onHoverTask}
                 sourceDayIdx={dateKey}
               />
             );

@@ -19,7 +19,12 @@ function createWindow() {
 
   if (isDev) {
     mainWindow.loadURL('http://localhost:5173');
-    mainWindow.webContents.openDevTools();
+    // 起動時の負荷を分散させるため、少し遅らせてDevToolsを開く
+    setTimeout(() => {
+      if (!mainWindow.isDestroyed()) {
+        mainWindow.webContents.openDevTools();
+      }
+    }, 1000);
   } else {
     mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
   }
@@ -43,7 +48,7 @@ const dataFilePath = path.join(app.getPath('userData'), 'timeMapTodoData.json');
 ipcMain.handle('load-data', async () => {
   try {
     if (fs.existsSync(dataFilePath)) {
-      const data = fs.readFileSync(dataFilePath, 'utf8');
+      const data = await fs.promises.readFile(dataFilePath, 'utf8');
       return JSON.parse(data);
     }
   } catch (error) {
@@ -52,10 +57,13 @@ ipcMain.handle('load-data', async () => {
   return null;
 });
 
-ipcMain.on('save-data', (event, data) => {
+// 保存処理を handle (async) に変更し、非同期で書き込むようにする
+ipcMain.handle('save-data', async (event, data) => {
   try {
-    fs.writeFileSync(dataFilePath, JSON.stringify(data), 'utf8');
+    await fs.promises.writeFile(dataFilePath, JSON.stringify(data), 'utf8');
+    return { success: true };
   } catch (error) {
     console.error('Failed to save data', error);
+    return { success: false, error: error.message };
   }
 });

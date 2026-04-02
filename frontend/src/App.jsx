@@ -31,15 +31,15 @@ const getTaskStatus = (taskId, tasks, boardState) => {
   collect(taskId);
 
   let assignedTotal = 0;
-  let hasFutureOrToday = false;
+  let completedAssignedTotal = 0;
   const todayStr = new Date().toISOString().split('T')[0];
 
   Object.entries(boardState).forEach(([dateKey, assignments]) => {
     assignments.forEach(a => {
       if (descendants.has(a.taskId)) {
         assignedTotal += a.duration;
-        if (dateKey >= todayStr) {
-          hasFutureOrToday = true;
+        if (dateKey < todayStr) {
+          completedAssignedTotal += a.duration;
         }
       }
     });
@@ -49,7 +49,7 @@ const getTaskStatus = (taskId, tasks, boardState) => {
   if (!task) return 'NotStarted';
 
   if (assignedTotal === 0) return 'NotStarted';
-  if (assignedTotal >= task.totalTime && !hasFutureOrToday) return 'Completed';
+  if (completedAssignedTotal >= task.totalTime) return 'Completed';
   return 'InProgress';
 };
 
@@ -106,6 +106,7 @@ function App() {
   const [filterConfig, setFilterConfig] = useState({ status: 'all', tag: 'all' });
   const [sortConfig, setSortConfig] = useState({ key: 'deadline', order: 'asc' });
   const [editingTask, setEditingTask] = useState(null); // For Detail Popup
+  const [hoveredTaskId, setHoveredTaskId] = useState(null);
   
   const resizingRef = useRef(null);
   const completionResizingRef = useRef(null);
@@ -464,6 +465,7 @@ function App() {
           allTasks={tasksWithRemainingTime}
           boardState={appState.boardState}
           selectedTaskId={selectedTaskId} 
+          hoveredTaskId={hoveredTaskId}
           onSelectTask={setSelectedTaskId} 
           onToggleParent={handleToggleParent}
           onAdjustTime={handleAdjustTime}
@@ -471,6 +473,7 @@ function App() {
           onDeleteTask={handleDeleteTask}
           onUpdateTaskTitle={handleUpdateTaskTitle}
           onOpenDetail={setEditingTask}
+          onHoverTask={setHoveredTaskId}
           filterConfig={filterConfig}
           setFilterConfig={setFilterConfig}
           sortConfig={sortConfig}
@@ -486,12 +489,12 @@ function App() {
           setViewType={setViewType}
           boardState={appState.boardState}
           tasks={tasksWithRemainingTime}
-          selectedTask={selectedTask}
-          onAddAssignment={handleAddAssignment}
+          hoveredTaskId={hoveredTaskId}
           onAddAssignmentFromSidebar={handleAddAssignmentFromSidebar}
           onDeleteAssignment={handleDeleteAssignment}
           onMoveAssignment={handleMoveAssignment}
           onQuickAdjust={handleQuickAdjust}
+          onHoverTask={setHoveredTaskId}
         />
       </div>
       {editingTask && (

@@ -5,10 +5,12 @@ export default function MonthlyBoard({
   baseDate,
   boardState,
   tasks,
+  hoveredTaskId,
   onAddAssignmentFromSidebar,
   onDeleteAssignment,
   onMoveAssignment,
-  onQuickAdjust
+  onQuickAdjust,
+  onHoverTask
 }) {
   const dates = getMonthDates(baseDate);
   const daysOfWeek = ["月", "火", "水", "木", "金", "土", "日"];
@@ -22,10 +24,7 @@ export default function MonthlyBoard({
     <div className="flex h-full w-full flex-col overflow-hidden">
       <div className="grid grid-cols-7 shrink-0 gap-px border-b border-r border-l border-slate-200 bg-slate-200">
         {daysOfWeek.map((dayName) => (
-          <div
-            key={dayName}
-            className="bg-white py-2 text-center text-xs font-bold tracking-wider text-slate-500"
-          >
+          <div key={dayName} className="bg-white py-2 text-center text-xs font-bold tracking-wider text-slate-500">
             {dayName}
           </div>
         ))}
@@ -34,10 +33,7 @@ export default function MonthlyBoard({
       <div className="flex-1 overflow-y-auto border-r border-l border-b border-slate-200 bg-slate-200 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
         <div className="flex min-h-full flex-col gap-px bg-slate-200">
           {weeks.map((week, weekIndex) => (
-            <div
-              key={`week-${weekIndex}`}
-              className="grid min-h-[120px] flex-1 grid-cols-7 items-stretch gap-px bg-slate-200"
-            >
+            <div key={`week-${weekIndex}`} className="grid min-h-[120px] flex-1 grid-cols-7 items-stretch gap-px bg-slate-200">
               {week.map((dateObj, dayIndex) => {
                 const assignments = boardState[dateObj.dateKey] || [];
 
@@ -47,10 +43,12 @@ export default function MonthlyBoard({
                     dateObj={dateObj}
                     assignments={assignments}
                     tasks={tasks}
+                    hoveredTaskId={hoveredTaskId}
                     onAddAssignmentFromSidebar={onAddAssignmentFromSidebar}
                     onDeleteAssignment={onDeleteAssignment}
                     onMoveAssignment={onMoveAssignment}
                     onQuickAdjust={onQuickAdjust}
+                    onHoverTask={onHoverTask}
                   />
                 );
               })}

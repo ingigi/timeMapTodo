@@ -1,13 +1,15 @@
 import { useRef, useState } from "react";
-import { X, Plus, Minus } from "lucide-react";
+import clsx from "clsx";
+import { Minus, Plus, X } from "lucide-react";
 import { attachDragPreview } from "../../utils/dragPreview";
 
 export default function AssignedBlock({
   assignment,
   task,
+  isRelated,
   onDelete,
-  onResizeStart,
   onQuickAdjust,
+  onHoverTask,
   sourceDayIdx
 }) {
   const dragCleanupRef = useRef(null);
@@ -19,6 +21,8 @@ export default function AssignedBlock({
     <div className="w-full px-0.5 py-0.5">
       <div
         draggable
+        onMouseEnter={() => onHoverTask(task.id)}
+        onMouseLeave={() => onHoverTask(null)}
         onDragStart={(e) => {
           setIsDragging(true);
           e.dataTransfer.effectAllowed = "move";
@@ -39,10 +43,14 @@ export default function AssignedBlock({
           dragCleanupRef.current?.();
           dragCleanupRef.current = null;
         }}
-        className={`group relative flex min-h-[5.25rem] w-full cursor-grab select-none overflow-hidden rounded-2xl border border-slate-200 bg-white transition-all active:cursor-grabbing hover:shadow-md ${isDragging ? "scale-[0.98] opacity-55" : "shadow-sm"}`}
-        style={{
-          borderLeft: `3px solid ${task.color || "#94a3b8"}`
-        }}
+        className={clsx(
+          "group relative flex min-h-[5.25rem] w-full cursor-grab select-none overflow-hidden rounded-2xl border bg-white transition-all active:cursor-grabbing",
+          isDragging && "scale-[0.98] opacity-55",
+          isRelated
+            ? "border-blue-400 shadow-[0_12px_28px_rgba(37,99,235,0.18)] ring-2 ring-blue-100"
+            : "border-slate-200 shadow-sm hover:shadow-md"
+        )}
+        style={{ borderLeft: `3px solid ${task.color || "#94a3b8"}` }}
       >
         <div className="absolute left-3 top-3">
           <div
@@ -54,22 +62,18 @@ export default function AssignedBlock({
         </div>
 
         <div className="flex min-w-0 flex-1 flex-col p-3 pt-10">
-          <div className="mb-2">
-            <div className="text-[14px] font-black leading-snug text-slate-800 break-words">
-              {task.title || "無題"}
-            </div>
+          <div className="mb-2 break-words text-[14px] font-black leading-snug text-slate-800">
+            {task.title || "無題"}
           </div>
 
           <div className="mt-auto flex items-end justify-between gap-3">
-            <div className="min-w-0">
-              <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">Allocated</div>
+            <div>
+              <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">この日へ配置</div>
               <div className="mt-1 flex items-baseline gap-1">
                 <span className="text-xl font-black leading-none text-slate-900">{assignment.duration}</span>
                 <span className="text-sm font-bold leading-none text-slate-400">h</span>
               </div>
-              <div className="mt-1 text-[10px] font-medium text-slate-400">
-                残り {task.remainingTime.toFixed(1)}h
-              </div>
+              <div className="mt-1 text-[10px] font-medium text-slate-400">元タスクの残り {task.remainingTime.toFixed(1)}h</div>
             </div>
 
             <div className="flex items-center gap-1 rounded-xl border border-slate-100 bg-slate-50 p-1">

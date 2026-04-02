@@ -5,12 +5,12 @@ export default function WeeklyBoard({
   baseDate,
   boardState,
   tasks,
-  selectedTask,
-  onAddAssignment,
+  hoveredTaskId,
   onAddAssignmentFromSidebar,
   onDeleteAssignment,
   onMoveAssignment,
-  onQuickAdjust
+  onQuickAdjust,
+  onHoverTask
 }) {
   const dates = getWeekDates(baseDate);
 
@@ -30,12 +30,12 @@ export default function WeeklyBoard({
                 isToday={day.isToday}
                 assignments={assignments}
                 tasks={tasks}
-                selectedTask={selectedTask}
-                onAddAssignment={(e) => onAddAssignment(e, day.dateKey)}
+                hoveredTaskId={hoveredTaskId}
                 onAddAssignmentFromSidebar={onAddAssignmentFromSidebar}
                 onDeleteAssignment={(assignmentId) => onDeleteAssignment(day.dateKey, assignmentId)}
                 onMoveAssignment={onMoveAssignment}
                 onQuickAdjust={onQuickAdjust}
+                onHoverTask={onHoverTask}
               />
             );
           })}

@@ -1,7 +1,7 @@
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import WeeklyBoard from "../WeeklyBoard/WeeklyBoard";
 import MonthlyBoard from "../MonthlyBoard/MonthlyBoard";
-import { addWeeks, subWeeks, addMonths, subMonths, startOfWeek } from "../../utils/dateUtils";
+import { addMonths, addWeeks, startOfWeek, subMonths, subWeeks } from "../../utils/dateUtils";
 
 export default function CalendarArea({
   baseDate,
@@ -10,12 +10,12 @@ export default function CalendarArea({
   setViewType,
   boardState,
   tasks,
-  selectedTask,
-  onAddAssignment,
+  hoveredTaskId,
   onAddAssignmentFromSidebar,
   onDeleteAssignment,
   onMoveAssignment,
-  onQuickAdjust
+  onQuickAdjust,
+  onHoverTask
 }) {
   const handlePrev = () => {
     setBaseDate((prev) => (viewType === "week" ? subWeeks(prev, 1) : subMonths(prev, 1)));
@@ -37,25 +37,23 @@ export default function CalendarArea({
     const start = startOfWeek(baseDate);
     const end = addWeeks(start, 1);
     end.setDate(end.getDate() - 1);
-    const startStr = `${start.getMonth() + 1}月${start.getDate()}日`;
-    const endStr = `${end.getMonth() + 1}月${end.getDate()}日`;
-    return `${startStr} - ${endStr}`;
+    return `${start.getMonth() + 1}月${start.getDate()}日 - ${end.getMonth() + 1}月${end.getDate()}日`;
   };
 
   return (
     <div className="relative flex h-full flex-col">
       <div className="mb-6 flex items-center justify-between">
         <div className="flex items-center gap-4">
-          <div className="flex items-center gap-2 rounded-md bg-slate-100 p-1">
+          <div className="flex items-center gap-2 rounded-xl bg-slate-100 p-1">
             <button
               onClick={() => setViewType("week")}
-              className={`rounded px-3 py-1 text-sm font-semibold ${viewType === "week" ? "bg-white text-slate-800 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
+              className={`rounded-lg px-3 py-1 text-sm font-semibold ${viewType === "week" ? "bg-white text-slate-800 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
             >
               週
             </button>
             <button
               onClick={() => setViewType("month")}
-              className={`rounded px-3 py-1 text-sm font-semibold ${viewType === "month" ? "bg-white text-slate-800 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
+              className={`rounded-lg px-3 py-1 text-sm font-semibold ${viewType === "month" ? "bg-white text-slate-800 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
             >
               月
             </button>
@@ -81,22 +79,24 @@ export default function CalendarArea({
             baseDate={baseDate}
             boardState={boardState}
             tasks={tasks}
-            selectedTask={selectedTask}
-            onAddAssignment={onAddAssignment}
+            hoveredTaskId={hoveredTaskId}
             onAddAssignmentFromSidebar={onAddAssignmentFromSidebar}
             onDeleteAssignment={onDeleteAssignment}
             onMoveAssignment={onMoveAssignment}
             onQuickAdjust={onQuickAdjust}
+            onHoverTask={onHoverTask}
           />
         ) : (
           <MonthlyBoard
             baseDate={baseDate}
             boardState={boardState}
             tasks={tasks}
+            hoveredTaskId={hoveredTaskId}
             onAddAssignmentFromSidebar={onAddAssignmentFromSidebar}
             onDeleteAssignment={onDeleteAssignment}
             onMoveAssignment={onMoveAssignment}
             onQuickAdjust={onQuickAdjust}
+            onHoverTask={onHoverTask}
           />
         )}
       </div>
