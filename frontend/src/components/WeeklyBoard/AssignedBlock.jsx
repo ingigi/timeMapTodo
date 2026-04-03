@@ -1,40 +1,42 @@
 import { useRef, useState } from "react";
 import clsx from "clsx";
-import { Minus, Plus, X } from "lucide-react";
+import { Check, RotateCcw, X } from "lucide-react";
 import { attachDragPreview } from "../../utils/dragPreview";
+import { getTaskPalette } from "../../utils/taskColors";
 
 export default function AssignedBlock({
   assignment,
   task,
   isRelated,
   onDelete,
-  onQuickAdjust,
+  onToggleComplete,
   onHoverTask,
+  onOpenDetail,
   sourceDayIdx
 }) {
   const dragCleanupRef = useRef(null);
   const [isDragging, setIsDragging] = useState(false);
 
   if (!task) return null;
+  const palette = getTaskPalette(task.color);
 
   return (
-    <div className="w-full px-0.5 py-0.5">
+    <div className="w-full px-1 py-1">
       <div
         draggable
         onMouseEnter={() => onHoverTask(task.id)}
         onMouseLeave={() => onHoverTask(null)}
-        onDragStart={(e) => {
+        onClick={() => onOpenDetail(task.id)}
+        onDragStart={(event) => {
           setIsDragging(true);
-          e.dataTransfer.effectAllowed = "move";
-          e.dataTransfer.setData("sourceDayIdx", sourceDayIdx);
-          e.dataTransfer.setData("assignmentId", assignment.id);
-          e.dataTransfer.setData("dragType", "all");
-          e.dataTransfer.setData("dragDuration", String(assignment.duration));
-          e.dataTransfer.setData("dragTitle", task.title || "タスク");
-          e.dataTransfer.setData("dragColor", task.color || "#94a3b8");
-          dragCleanupRef.current = attachDragPreview(e, {
-            title: task.title || "タスク",
-            duration: assignment.duration,
+          event.dataTransfer.effectAllowed = "move";
+          event.dataTransfer.setData("sourceDayIdx", sourceDayIdx);
+          event.dataTransfer.setData("assignmentId", assignment.id);
+          event.dataTransfer.setData("dragType", "move");
+          event.dataTransfer.setData("dragTitle", task.title || "Task");
+          event.dataTransfer.setData("dragColor", task.color || "#94a3b8");
+          dragCleanupRef.current = attachDragPreview(event, {
+            title: task.title || "Task",
             color: task.color || "#94a3b8"
           });
         }}
@@ -43,74 +45,55 @@ export default function AssignedBlock({
           dragCleanupRef.current?.();
           dragCleanupRef.current = null;
         }}
+        style={{
+          borderColor: assignment.completed ? palette.completedBorder : isRelated ? palette.borderStrong : palette.border,
+          backgroundColor: assignment.completed ? palette.completedSurface : isRelated ? palette.surfaceStrong : palette.surface,
+          boxShadow: isRelated ? `0 8px 20px ${palette.shadow}` : "0 1px 2px rgba(15, 23, 42, 0.06)"
+        }}
         className={clsx(
-          "group relative flex min-h-[5.25rem] w-full cursor-grab select-none overflow-hidden rounded-2xl border bg-white transition-all active:cursor-grabbing",
-          isDragging && "scale-[0.98] opacity-55",
-          isRelated
-            ? "border-blue-400 shadow-[0_12px_28px_rgba(37,99,235,0.18)] ring-2 ring-blue-100"
-            : "border-slate-200 shadow-sm hover:shadow-md"
+          "relative flex min-h-[132px] cursor-pointer select-none flex-col justify-between overflow-hidden rounded-2xl border p-3 transition-all",
+          isDragging && "scale-[0.99] opacity-60",
+          assignment.completed && "opacity-75"
         )}
-        style={{ borderLeft: `3px solid ${task.color || "#94a3b8"}` }}
       >
-        <div className="absolute left-3 top-3">
-          <div
-            className="rounded-full px-2 py-0.5 text-[10px] font-bold tracking-[0.16em] text-white"
-            style={{ backgroundColor: task.color || "#94a3b8" }}
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0 flex-1">
+            <div className={clsx("break-words text-sm font-semibold leading-6 text-slate-900", assignment.completed && "line-through")} style={assignment.completed ? { color: palette.mutedText } : undefined}>
+              {task.title || "Untitled"}
+            </div>
+          </div>
+
+          <button
+            onClick={(event) => {
+              event.stopPropagation();
+              onDelete(assignment.id);
+            }}
+            className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-red-50 hover:text-red-600"
+            title="削除"
           >
-            SLICE
-          </div>
+            <X className="h-3.5 w-3.5" />
+          </button>
         </div>
 
-        <div className="flex min-w-0 flex-1 flex-col p-3 pt-10">
-          <div className="mb-2 break-words text-[14px] font-black leading-snug text-slate-800">
-            {task.title || "無題"}
-          </div>
+        <div className="mt-4 flex items-end justify-between gap-3">
+          <div className="h-1.5 w-12 rounded-full" style={{ backgroundColor: palette.base }} />
 
-          <div className="mt-auto flex items-end justify-between gap-3">
-            <div>
-              <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">この日へ配置</div>
-              <div className="mt-1 flex items-baseline gap-1">
-                <span className="text-xl font-black leading-none text-slate-900">{assignment.duration}</span>
-                <span className="text-sm font-bold leading-none text-slate-400">h</span>
-              </div>
-              <div className="mt-1 text-[10px] font-medium text-slate-400">元タスクの残り {task.remainingTime.toFixed(1)}h</div>
-            </div>
-
-            <div className="flex items-center gap-1 rounded-xl border border-slate-100 bg-slate-50 p-1">
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onQuickAdjust(sourceDayIdx, assignment.id, -1);
-                }}
-                className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-white hover:text-red-600"
-                title="1時間減らす"
-              >
-                <Minus className="h-3.5 w-3.5" />
-              </button>
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onQuickAdjust(sourceDayIdx, assignment.id, 1);
-                }}
-                className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-white hover:text-blue-600"
-                title="1時間増やす"
-              >
-                <Plus className="h-3.5 w-3.5" />
-              </button>
-            </div>
-          </div>
+          <button
+            onClick={(event) => {
+              event.stopPropagation();
+              onToggleComplete(sourceDayIdx, assignment.id);
+            }}
+            className={clsx(
+              "inline-flex shrink-0 items-center gap-1 rounded-full border px-2.5 py-1.5 text-xs font-medium transition-colors",
+              assignment.completed
+                ? "border-emerald-200 bg-white text-emerald-700 hover:bg-emerald-50"
+                : "border-slate-200 bg-white/80 text-slate-700 hover:bg-white"
+            )}
+          >
+            {assignment.completed ? <RotateCcw className="h-3.5 w-3.5" /> : <Check className="h-3.5 w-3.5" />}
+            {assignment.completed ? "戻す" : "完了"}
+          </button>
         </div>
-
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            onDelete(assignment.id);
-          }}
-          className="absolute right-2 top-2 z-20 rounded-full border border-slate-100 bg-white/90 p-1 shadow-sm transition-all hover:bg-red-50 hover:text-red-600"
-          title="削除"
-        >
-          <X className="h-2.5 w-2.5" />
-        </button>
       </div>
     </div>
   );

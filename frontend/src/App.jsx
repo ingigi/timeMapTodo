@@ -1,129 +1,98 @@
-import { useState, useCallback, useRef, useEffect } from 'react';
-import MainLayout from './components/layout/MainLayout';
-import TaskPool from './components/TaskPool/TaskPool';
-import CalendarArea from './components/CalendarArea/CalendarArea';
-import HandDrawnPopup from './components/Common/HandDrawnPopup';
+import { useState, useCallback, useRef, useEffect } from "react";
+import MainLayout from "./components/layout/MainLayout";
+import TaskPool from "./components/TaskPool/TaskPool";
+import CalendarArea from "./components/CalendarArea/CalendarArea";
+import HandDrawnPopup from "./components/Common/HandDrawnPopup";
+import { getTaskStats, getTaskStatus } from "./utils/taskTime";
 
-const TASK_COLORS = [
-  '#3B82F6', // Blue
-  '#10B981', // Emerald
-  '#F59E0B', // Amber
-  '#6366F1', // Indigo
-  '#EC4899', // Pink
-  '#8B5CF6', // Violet
-  '#14B8A6', // Teal
-  '#F43F5E', // Rose
-];
+const TASK_COLORS = ["#5B8DEF", "#4FB7A8", "#D9A441", "#8A7FD1", "#7FA36B", "#C97B63", "#5FA3B7", "#C27A92"];
 
 const MOCK_TASKS = [
-  { id: 'p1', title: 'Q4 プロダクトローンチ', category: 'プロダクトチーム', color: TASK_COLORS[0], totalTime: 7.0, isExpanded: true, tags: ['Strategic'], deadline: '2026-04-30', description: 'Q4の主力プロダクトのローンチ計画' },
-  { id: 't1', parentId: 'p1', title: '市場分析', color: TASK_COLORS[0], totalTime: 4.0, tags: ['Analysis'], deadline: '2026-04-10', description: '競合他社の動向調査' },
-  { id: 't2', parentId: 'p1', title: 'ユーザーペルソナ作成', color: TASK_COLORS[0], totalTime: 3.0, tags: ['Design'], deadline: '2026-04-15', description: 'ターゲットユーザーの詳細定義' },
-  { id: 't3', title: 'API コアリファクタリング', category: 'エンジニアリングチーム', color: TASK_COLORS[2], totalTime: 8.0, tags: ['Dev', 'Refactor'], deadline: '2026-04-20', description: 'バックエンドAPIの最適化' },
-];
-
-const getTaskStatus = (taskId, tasks, boardState) => {
-  const descendants = new Set();
-  const collect = (id) => {
-    descendants.add(id);
-    tasks.filter(t => t.parentId === id).forEach(child => collect(child.id));
-  };
-  collect(taskId);
-
-  let assignedTotal = 0;
-  let completedAssignedTotal = 0;
-  const todayStr = new Date().toISOString().split('T')[0];
-
-  Object.entries(boardState).forEach(([dateKey, assignments]) => {
-    assignments.forEach(a => {
-      if (descendants.has(a.taskId)) {
-        assignedTotal += a.duration;
-        if (dateKey < todayStr) {
-          completedAssignedTotal += a.duration;
-        }
-      }
-    });
-  });
-
-  const task = tasks.find(t => t.id === taskId);
-  if (!task) return 'NotStarted';
-
-  if (assignedTotal === 0) return 'NotStarted';
-  if (completedAssignedTotal >= task.totalTime) return 'Completed';
-  return 'InProgress';
-};
-
-const BLOCK_HEIGHT_PX = 64; // 4rem = 64px roughly
-
-const getTaskAssignedTime = (taskId, tasks, boardState) => {
-  const descendants = new Set();
-  const collect = (id) => {
-    descendants.add(id);
-    tasks.filter(t => t.parentId === id).forEach(child => collect(child.id));
-  };
-  collect(taskId);
-  let sum = 0;
-  Object.values(boardState).flat().forEach(a => {
-    if (descendants.has(a.taskId)) sum += a.duration;
-  });
-  return sum;
-};
-
-const enforceHierarchicalTime = (tasks, modifiedTaskId) => {
-  let currentTasks = [...tasks];
-  let child = currentTasks.find(t => t.id === modifiedTaskId);
-  
-  while (child && child.parentId) {
-    const parentId = child.parentId;
-    const parentIdx = currentTasks.findIndex(t => t.id === parentId);
-    if (parentIdx === -1) break;
-    
-    const parent = currentTasks[parentIdx];
-    const childrenList = currentTasks.filter(t => t.parentId === parentId);
-    const childrenSum = childrenList.reduce((sum, c) => sum + c.totalTime, 0);
-    
-    if (parent.totalTime < childrenSum) {
-      currentTasks[parentIdx] = {
-        ...parent,
-        totalTime: childrenSum
-      };
-      child = currentTasks[parentIdx];
-    } else {
-      break; 
-    }
+  {
+    id: "p1",
+    title: "Q4 Product Launch",
+    color: TASK_COLORS[0],
+    isExpanded: true,
+    tags: ["Strategic"],
+    deadline: "2026-04-30",
+    description: "Launch planning and cross-team coordination"
+  },
+  {
+    id: "t1",
+    parentId: "p1",
+    title: "User interview synthesis",
+    color: TASK_COLORS[0],
+    tags: ["Research"],
+    deadline: "2026-04-10",
+    description: "Summarize recent user interviews"
+  },
+  {
+    id: "t2",
+    parentId: "p1",
+    title: "Landing page polish",
+    color: TASK_COLORS[0],
+    tags: ["Design"],
+    deadline: "2026-04-15",
+    description: "Tighten copy and final visuals"
+  },
+  {
+    id: "t3",
+    title: "API cleanup",
+    color: TASK_COLORS[2],
+    tags: ["Dev", "Refactor"],
+    deadline: "2026-04-20",
+    description: "Reduce legacy endpoints and simplify payloads"
   }
-  return currentTasks;
-};
+];
 
 function App() {
   const [appState, setAppState] = useState({
     tasks: MOCK_TASKS,
-    boardState: {} // `dateKey` (YYYY-MM-DD) -> array of { id, taskId, duration, completedDuration }
+    tagOptions: Array.from(new Set(MOCK_TASKS.flatMap((task) => task.tags || []))).sort((a, b) => a.localeCompare(b)),
+    boardState: {} // `dateKey` -> array of { id, taskId, completed }
   });
   const [selectedTaskId, setSelectedTaskId] = useState(null);
   const [baseDate, setBaseDate] = useState(new Date());
-  const [viewType, setViewType] = useState('week'); // 'week' | 'month'
-  const [filterConfig, setFilterConfig] = useState({ status: 'all', tag: 'all' });
-  const [sortConfig, setSortConfig] = useState({ key: 'deadline', order: 'asc' });
-  const [editingTask, setEditingTask] = useState(null); // For Detail Popup
+  const [viewType, setViewType] = useState("week");
+  const [filterConfig, setFilterConfig] = useState({ statuses: [], tag: "all" });
+  const [sortConfig, setSortConfig] = useState({ key: "deadline", order: "asc" });
+  const [editingTask, setEditingTask] = useState(null);
   const [hoveredTaskId, setHoveredTaskId] = useState(null);
-  
-  const resizingRef = useRef(null);
-  const completionResizingRef = useRef(null);
-  const saveTimeoutRef = useRef(null); // 保存処理のデバウンス用
+  const saveTimeoutRef = useRef(null);
   const [isLoaded, setIsLoaded] = useState(false);
 
   useEffect(() => {
     if (window.api && window.api.loadData) {
-      window.api.loadData().then(data => {
-        if (data && data.tasks) {
-          setAppState(data);
-        }
-        setIsLoaded(true);
-      }).catch(err => {
-        console.error("Failed to load data", err);
-        setIsLoaded(true);
-      });
+      window.api
+        .loadData()
+        .then((data) => {
+          if (data && data.tasks) {
+            const normalizedBoardState = Object.fromEntries(
+              Object.entries(data.boardState || {}).map(([dateKey, assignments]) => [
+                dateKey,
+                assignments.map((assignment) => ({
+                  id: assignment.id,
+                  taskId: assignment.taskId,
+                  completed: Boolean(assignment.completed)
+                }))
+              ])
+            );
+
+            setAppState({
+              tasks: data.tasks.map((task) => {
+                const { totalTime, ...rest } = task;
+                return rest;
+              }),
+              tagOptions: Array.from(new Set((data.tagOptions || data.tasks.flatMap((task) => task.tags || [])))).sort((a, b) => a.localeCompare(b)),
+              boardState: normalizedBoardState
+            });
+          }
+          setIsLoaded(true);
+        })
+        .catch((err) => {
+          console.error("Failed to load data", err);
+          setIsLoaded(true);
+        });
     } else {
       setIsLoaded(true);
     }
@@ -131,18 +100,12 @@ function App() {
 
   useEffect(() => {
     if (isLoaded && window.api && window.api.saveData) {
-      // 既存のタイマーがあればクリアする
       if (saveTimeoutRef.current) {
         clearTimeout(saveTimeoutRef.current);
       }
 
-      // 1000ms待機してから保存を実行する
       saveTimeoutRef.current = setTimeout(() => {
-        window.api.saveData(appState).then(result => {
-          if (result && !result.success) {
-            console.error("Save failed:", result.error);
-          }
-        }).catch(err => {
+        window.api.saveData(appState).catch((err) => {
           console.error("Save error:", err);
         });
       }, 1000);
@@ -156,319 +119,227 @@ function App() {
   }, [appState, isLoaded]);
 
   const handleCreateInlineTask = useCallback((parentId = null) => {
-    setAppState(prev => {
-      let newTasks = [...prev.tasks];
-      const parentTask = parentId ? prev.tasks.find(t => t.id === parentId) : null;
-      
-      const nextColor = TASK_COLORS[prev.tasks.length % TASK_COLORS.length];
-      const newTaskId = `task_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+    setAppState((prev) => {
+      const parentTask = parentId ? prev.tasks.find((task) => task.id === parentId) : null;
+      const nextColor = parentTask?.color || TASK_COLORS[prev.tasks.length % TASK_COLORS.length];
+      const newTaskId = `task_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
 
-      newTasks.push({
-        id: newTaskId,
-        title: '', 
-        category: parentTask ? parentTask.category : '',
-        color: nextColor,
-        totalTime: 1.0,
-        parentId: parentId,
-        isExpanded: true,
-        tags: [],
-        deadline: new Date().toISOString().split('T')[0],
-        description: ''
-      });
+      const newTasks = [
+        ...prev.tasks,
+        {
+          id: newTaskId,
+          title: "",
+          color: nextColor,
+          parentId,
+          isExpanded: true,
+          tags: [],
+          deadline: new Date().toISOString().split("T")[0],
+          description: ""
+        }
+      ].map((task) => (task.id === parentId ? { ...task, isExpanded: true } : task));
 
-      if (parentId) {
-        const parentIdx = newTasks.findIndex(t => t.id === parentId);
-        if (parentIdx >= 0) newTasks[parentIdx] = { ...newTasks[parentIdx], isExpanded: true };
-        newTasks = enforceHierarchicalTime(newTasks, newTaskId);
-      }
-      
       return { ...prev, tasks: newTasks };
     });
   }, []);
 
   const handleUpdateTaskTitle = useCallback((taskId, newTitle) => {
-    setAppState(prev => {
-      const taskIdx = prev.tasks.findIndex(t => t.id === taskId);
-      if (taskIdx === -1) return prev;
-      const newTasks = [...prev.tasks];
-      newTasks[taskIdx] = { ...newTasks[taskIdx], title: newTitle };
-      return { ...prev, tasks: newTasks };
-    });
-  }, []);
-
-  const handleUpdateTaskDetails = useCallback((taskId, updates) => {
-    setAppState(prev => {
-      const taskIdx = prev.tasks.findIndex(t => t.id === taskId);
-      if (taskIdx === -1) return prev;
-      const newTasks = [...prev.tasks];
-      newTasks[taskIdx] = { ...newTasks[taskIdx], ...updates };
-      return { ...prev, tasks: newTasks };
-    });
-  }, []);
-
-  const handleDeleteTask = useCallback((taskId) => {
-    setAppState(prev => {
-      const taskToDelete = prev.tasks.find(t => t.id === taskId);
-      if (!taskToDelete) return prev;
-
-      const taskIdsToDelete = new Set([taskId]);
-      const collectDescendants = (parentId) => {
-        prev.tasks.filter(t => t.parentId === parentId).forEach(child => {
-          taskIdsToDelete.add(child.id);
-          collectDescendants(child.id);
-        });
-      };
-      collectDescendants(taskId);
-
-      if (taskIdsToDelete.has(selectedTaskId)) {
-         setTimeout(() => setSelectedTaskId(null), 0);
-      }
-
-      const newTasks = prev.tasks.filter(t => !taskIdsToDelete.has(t.id));
-      const newBoardState = {};
-      let isBoardChanged = false;
-      
-      for (const [dateKey, assignments] of Object.entries(prev.boardState)) {
-        const filteredAssignments = assignments.filter(a => !taskIdsToDelete.has(a.taskId));
-        if (filteredAssignments.length !== assignments.length) {
-          isBoardChanged = true;
-        }
-        if (filteredAssignments.length > 0) {
-          newBoardState[dateKey] = filteredAssignments;
-        }
-      }
-
-      return { 
-        ...prev, 
-        tasks: newTasks,
-        boardState: isBoardChanged ? newBoardState : prev.boardState
-      };
-    });
-  }, [selectedTaskId]);
-
-  const handleToggleParent = useCallback((taskId) => {
-    setAppState(prev => ({
+    setAppState((prev) => ({
       ...prev,
-      tasks: prev.tasks.map(t => t.id === taskId ? { ...t, isExpanded: !t.isExpanded } : t)
+      tasks: prev.tasks.map((task) => (task.id === taskId ? { ...task, title: newTitle } : task))
     }));
   }, []);
 
-  const handleAdjustTime = useCallback((taskId, delta) => {
-    setAppState(prev => {
-       const taskIdx = prev.tasks.findIndex(t => t.id === taskId);
-       if (taskIdx === -1) return prev;
-       
-       const task = prev.tasks[taskIdx];
-       let newTotal = task.totalTime + delta;
-
-       const children = prev.tasks.filter(t => t.parentId === task.id);
-       const minTotal = children.reduce((sum, c) => sum + c.totalTime, 0);
-       newTotal = Math.max(minTotal, newTotal);
-       
-       newTotal = Math.max(0, newTotal);
-
-       if (newTotal === task.totalTime) return prev;
-       
-       let newTasks = [...prev.tasks];
-       newTasks[taskIdx] = { ...task, totalTime: newTotal };
-       
-       newTasks = enforceHierarchicalTime(newTasks, taskId);
-
-       return { ...prev, tasks: newTasks };
-    });
+  const handleUpdateTaskDetails = useCallback((taskId, updates) => {
+    setAppState((prev) => ({
+      ...prev,
+      tasks: prev.tasks.map((task) => (task.id === taskId ? { ...task, ...updates } : task))
+    }));
   }, []);
 
-  const handleMoveAssignment = useCallback((sourceDateKey, targetDateKey, assignmentId, dragType = 'all') => {
-    if (sourceDateKey === targetDateKey && dragType === 'all') return;
+  const handleDeleteTask = useCallback(
+    (taskId) => {
+      setAppState((prev) => {
+        const taskIdsToDelete = new Set([taskId]);
 
-    setAppState(prev => {
+        const collectDescendants = (parentId) => {
+          prev.tasks
+            .filter((task) => task.parentId === parentId)
+            .forEach((child) => {
+              taskIdsToDelete.add(child.id);
+              collectDescendants(child.id);
+            });
+        };
+
+        collectDescendants(taskId);
+
+        if (taskIdsToDelete.has(selectedTaskId)) {
+          setTimeout(() => setSelectedTaskId(null), 0);
+        }
+
+        const nextBoardState = Object.fromEntries(
+          Object.entries(prev.boardState)
+            .map(([dateKey, assignments]) => [
+              dateKey,
+              assignments.filter((assignment) => !taskIdsToDelete.has(assignment.taskId))
+            ])
+            .filter(([, assignments]) => assignments.length > 0)
+        );
+
+        return {
+          ...prev,
+          tasks: prev.tasks.filter((task) => !taskIdsToDelete.has(task.id)),
+          boardState: nextBoardState
+        };
+      });
+    },
+    [selectedTaskId]
+  );
+
+  const handleToggleParent = useCallback((taskId) => {
+    setAppState((prev) => ({
+      ...prev,
+      tasks: prev.tasks.map((task) => (task.id === taskId ? { ...task, isExpanded: !task.isExpanded } : task))
+    }));
+  }, []);
+
+  const handleMoveAssignment = useCallback((sourceDateKey, targetDateKey, assignmentId) => {
+    if (sourceDateKey === targetDateKey) return;
+
+    setAppState((prev) => {
       const sourceAssignments = prev.boardState[sourceDateKey] || [];
-      const assignmentToMove = sourceAssignments.find(a => a.id === assignmentId);
+      const assignmentToMove = sourceAssignments.find((assignment) => assignment.id === assignmentId);
       if (!assignmentToMove) return prev;
 
-      const targetAssignments = prev.boardState[targetDateKey] || [];
-      
-      let durationToMove = assignmentToMove.duration;
-      let completedToMove = assignmentToMove.completedDuration || 0;
-      let remainingDurationInSource = 0;
-      let remainingCompletedInSource = 0;
+      const nextSourceAssignments = sourceAssignments.filter((assignment) => assignment.id !== assignmentId);
+      const nextTargetAssignments = [...(prev.boardState[targetDateKey] || []), assignmentToMove];
+      const nextBoardState = { ...prev.boardState, [targetDateKey]: nextTargetAssignments };
 
-      if (dragType === 'completed') {
-         durationToMove = assignmentToMove.completedDuration || 0;
-         completedToMove = assignmentToMove.completedDuration || 0;
-         remainingDurationInSource = assignmentToMove.duration - durationToMove;
-         remainingCompletedInSource = 0;
-      } else if (dragType === 'incomplete') {
-         durationToMove = assignmentToMove.duration - (assignmentToMove.completedDuration || 0);
-         completedToMove = 0;
-         remainingDurationInSource = assignmentToMove.completedDuration || 0;
-         remainingCompletedInSource = assignmentToMove.completedDuration || 0;
-      }
-
-      const targetTotalExcludingMoved = targetAssignments.filter(a => a.id !== assignmentId).reduce((sum, a) => sum + a.duration, 0)
-        + (sourceDateKey === targetDateKey && dragType !== 'all' ? remainingDurationInSource : 0);
-
-      let newSourceAssignments = [...sourceAssignments];
-      newSourceAssignments = sourceAssignments.filter(a => a.id !== assignmentId);
-
-      let newTargetAssignments = sourceDateKey === targetDateKey ? newSourceAssignments : [...targetAssignments];
-      const existingInTargetIdx = newTargetAssignments.findIndex(a => a.taskId === assignmentToMove.taskId && a.id !== assignmentId);
-
-      if (existingInTargetIdx >= 0) {
-        newTargetAssignments[existingInTargetIdx] = {
-           ...newTargetAssignments[existingInTargetIdx],
-           duration: newTargetAssignments[existingInTargetIdx].duration + durationToMove
-        };
+      if (nextSourceAssignments.length > 0) {
+        nextBoardState[sourceDateKey] = nextSourceAssignments;
       } else {
-        newTargetAssignments.push({
-           ...assignmentToMove,
-           id: `evt_${Date.now()}_${Math.random()}`,
-           duration: durationToMove
-        });
+        delete nextBoardState[sourceDateKey];
       }
 
-      return {
-        ...prev,
-        boardState: {
-          ...prev.boardState,
-          [sourceDateKey]: newSourceAssignments,
-          [targetDateKey]: newTargetAssignments
-        }
-      };
+      return { ...prev, boardState: nextBoardState };
     });
   }, []);
 
   const handleDeleteAssignment = useCallback((dateKey, assignmentId) => {
-    setAppState(prev => {
+    setAppState((prev) => {
       const dayAssignments = prev.boardState[dateKey] || [];
-      if (!dayAssignments.find(a => a.id === assignmentId)) return prev;
+      const nextAssignments = dayAssignments.filter((assignment) => assignment.id !== assignmentId);
+      const nextBoardState = { ...prev.boardState };
 
-      const newAssignments = dayAssignments.filter(a => a.id !== assignmentId);
-      return { ...prev, boardState: { ...prev.boardState, [dateKey]: newAssignments } };
+      if (nextAssignments.length > 0) {
+        nextBoardState[dateKey] = nextAssignments;
+      } else {
+        delete nextBoardState[dateKey];
+      }
+
+      return { ...prev, boardState: nextBoardState };
     });
   }, []);
-
 
   const handleAddAssignmentFromSidebar = useCallback((taskId, dateKey) => {
-    const task = appState.tasks.find(t => t.id === taskId);
-    if (!task) return;
-    const assignedTime = getTaskAssignedTime(taskId, appState.tasks, appState.boardState);
-    if (task.totalTime - assignedTime <= 0) return;
-
-    const dayAssignments = appState.boardState[dateKey] || [];
-
-    setAppState(prev => {
-      const prevDayAssigments = prev.boardState[dateKey] || [];
-      const existingAssignIdx = prevDayAssigments.findIndex(a => a.taskId === taskId);
-      let newAssignments = [...prevDayAssigments];
-
-      if (existingAssignIdx >= 0) {
-        newAssignments[existingAssignIdx] = {
-          ...newAssignments[existingAssignIdx],
-          duration: newAssignments[existingAssignIdx].duration + 1
-        };
-      } else {
-        newAssignments.push({
-          id: `evt_${Date.now()}_${Math.random()}`,
-          taskId: taskId,
-          duration: 1
-        });
+    setAppState((prev) => ({
+      ...prev,
+      boardState: {
+        ...prev.boardState,
+        [dateKey]: [
+          ...(prev.boardState[dateKey] || []),
+          {
+            id: `evt_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+            taskId,
+            completed: false
+          }
+        ]
       }
-
-      return { ...prev, boardState: { ...prev.boardState, [dateKey]: newAssignments } };
-    });
-  }, [appState.tasks, appState.boardState]);
-
-  const handleAddAssignment = useCallback((e, dateKey) => {
-    e.preventDefault();
-    if (!selectedTaskId) return;
-    handleAddAssignmentFromSidebar(selectedTaskId, dateKey);
-  }, [selectedTaskId, handleAddAssignmentFromSidebar]);
-
-  // Handle explicit adjustment from MonthView buttons
-  const handleQuickAdjust = useCallback((dateKey, assignmentId, delta) => {
-    setAppState(prev => {
-      const dayAssignments = prev.boardState[dateKey] || [];
-      const assignIdx = dayAssignments.findIndex(a => a.id === assignmentId);
-      if (assignIdx === -1) return prev;
-
-      const assignment = dayAssignments[assignIdx];
-      const newDuration = assignment.duration + delta;
-
-      if (newDuration < 1) {
-        // Remove assignment
-        const newAssignments = dayAssignments.filter(a => a.id !== assignmentId);
-        return { ...prev, boardState: { ...prev.boardState, [dateKey]: newAssignments } };
-      }
-
-      if (delta > 0) {
-        const taskIdx = prev.tasks.findIndex(t => t.id === assignment.taskId);
-        if (taskIdx === -1) return prev;
-        const unassigned = prev.tasks[taskIdx].totalTime - getTaskAssignedTime(assignment.taskId, prev.tasks, prev.boardState);
-        if (unassigned < delta) return prev; 
-
-      }
-
-      const newAssignments = [...dayAssignments];
-      newAssignments[assignIdx] = { ...assignment, duration: newDuration };
-      return { ...prev, boardState: { ...prev.boardState, [dateKey]: newAssignments } };
-    });
+    }));
   }, []);
 
-  const tasksWithRemainingTime = appState.tasks.map(t => ({
-    ...t,
-    remainingTime: t.totalTime - getTaskAssignedTime(t.id, appState.tasks, appState.boardState)
-  }));
+  const handleToggleAssignmentComplete = useCallback((dateKey, assignmentId) => {
+    setAppState((prev) => ({
+      ...prev,
+      boardState: {
+        ...prev.boardState,
+        [dateKey]: (prev.boardState[dateKey] || []).map((assignment) =>
+          assignment.id === assignmentId ? { ...assignment, completed: !assignment.completed } : assignment
+        )
+      }
+    }));
+  }, []);
 
-  const filteredTasks = tasksWithRemainingTime
-    .filter(t => {
-      if (filterConfig.status === 'all') return true;
-      const status = getTaskStatus(t.id, appState.tasks, appState.boardState);
-      return status.toLowerCase() === filterConfig.status.toLowerCase();
+  const handleCreateTagOption = useCallback((tagName) => {
+    const trimmed = tagName.trim();
+    if (!trimmed) return;
+
+    setAppState((prev) => ({
+      ...prev,
+      tagOptions: prev.tagOptions.includes(trimmed) ? prev.tagOptions : [...prev.tagOptions, trimmed].sort((a, b) => a.localeCompare(b))
+    }));
+  }, []);
+
+  const handleDeleteTagOption = useCallback((tagName) => {
+    setAppState((prev) => ({
+      ...prev,
+      tagOptions: prev.tagOptions.filter((tag) => tag !== tagName),
+      tasks: prev.tasks.map((task) => ({
+        ...task,
+        tags: (task.tags || []).filter((tag) => tag !== tagName)
+      }))
+    }));
+  }, []);
+
+  const tasksWithStats = appState.tasks.map((task) => {
+    const stats = getTaskStats(task.id, appState.tasks, appState.boardState);
+    return {
+      ...task,
+      ...stats,
+      status: getTaskStatus(task.id, appState.tasks, appState.boardState)
+    };
+  });
+
+  const filteredTasks = tasksWithStats
+    .filter((task) => {
+      if (!filterConfig.statuses?.length) return true;
+      return filterConfig.statuses.includes(task.status.toLowerCase());
     })
-    .filter(t => {
-      if (filterConfig.tag === 'all') return true;
-      return t.tags?.includes(filterConfig.tag);
+    .filter((task) => {
+      if (filterConfig.tag === "all") return true;
+      return task.tags?.includes(filterConfig.tag);
     })
     .sort((a, b) => {
-      const key = sortConfig.key;
-      const order = sortConfig.order === 'asc' ? 1 : -1;
-      
-      if (key === 'deadline') {
-        return (a.deadline || '').localeCompare(b.deadline || '') * order;
-      }
-      if (key === 'remainingTime') {
-        return (a.remainingTime - b.remainingTime) * order;
-      }
-      if (key === 'title') {
-        return (a.title || '').localeCompare(b.title || '') * order;
-      }
-      if (key === 'status') {
-         const sa = getTaskStatus(a.id, appState.tasks, appState.boardState);
-         const sb = getTaskStatus(b.id, appState.tasks, appState.boardState);
-         return sa.localeCompare(sb) * order;
-      }
+      const order = sortConfig.order === "asc" ? 1 : -1;
+
+      if (sortConfig.key === "deadline") return (a.deadline || "").localeCompare(b.deadline || "") * order;
+      if (sortConfig.key === "scheduledCount") return (a.scheduledCount - b.scheduledCount) * order;
+      if (sortConfig.key === "title") return (a.title || "").localeCompare(b.title || "") * order;
+      if (sortConfig.key === "status") return a.status.localeCompare(b.status) * order;
       return 0;
     });
 
-  const selectedTask = tasksWithRemainingTime.find(t => t.id === selectedTaskId) || null;
+  const visibleTaskIds = new Set(filteredTasks.map((task) => task.id));
+  const filteredBoardState = Object.fromEntries(
+    Object.entries(appState.boardState)
+      .map(([dateKey, assignments]) => [dateKey, assignments.filter((assignment) => visibleTaskIds.has(assignment.taskId))])
+      .filter(([, assignments]) => assignments.length > 0)
+  );
+  const availableTags = appState.tagOptions;
 
   if (!isLoaded) {
-    return <div className="flex items-center justify-center h-screen bg-[#F8F9FB] text-slate-500 font-medium">データを読み込み中...</div>;
+    return <div className="flex h-screen items-center justify-center bg-[#F8F9FB] font-medium text-slate-500">Loading...</div>;
   }
 
   return (
     <MainLayout>
-      <div className="flex-1 w-1/3 min-w-[320px] max-w-[400px]">
-        <TaskPool 
-          tasks={filteredTasks} 
-          allTasks={tasksWithRemainingTime}
-          boardState={appState.boardState}
-          selectedTaskId={selectedTaskId} 
+      <div className="w-1/3 min-w-[320px] max-w-[400px] flex-1">
+        <TaskPool
+          tasks={filteredTasks}
+          allTasks={tasksWithStats}
+          selectedTaskId={selectedTaskId}
           hoveredTaskId={hoveredTaskId}
-          onSelectTask={setSelectedTaskId} 
+          onSelectTask={setSelectedTaskId}
           onToggleParent={handleToggleParent}
-          onAdjustTime={handleAdjustTime}
           onCreateInlineTask={handleCreateInlineTask}
           onDeleteTask={handleDeleteTask}
           onUpdateTaskTitle={handleUpdateTaskTitle}
@@ -478,28 +349,32 @@ function App() {
           setFilterConfig={setFilterConfig}
           sortConfig={sortConfig}
           setSortConfig={setSortConfig}
-          onAddAssignment={handleAddAssignmentFromSidebar}
+          availableTags={availableTags}
         />
       </div>
-      <div className="flex-[2] rounded-md bg-white p-6 shadow-sm border border-slate-200 flex flex-col overflow-hidden min-w-[800px] relative">
-        <CalendarArea 
+      <div className="relative flex min-w-[800px] flex-[2] flex-col overflow-hidden rounded-md border border-slate-200 bg-white p-6 shadow-sm">
+        <CalendarArea
           baseDate={baseDate}
           setBaseDate={setBaseDate}
           viewType={viewType}
           setViewType={setViewType}
-          boardState={appState.boardState}
-          tasks={tasksWithRemainingTime}
+          boardState={filteredBoardState}
+          tasks={filteredTasks}
           hoveredTaskId={hoveredTaskId}
           onAddAssignmentFromSidebar={handleAddAssignmentFromSidebar}
           onDeleteAssignment={handleDeleteAssignment}
           onMoveAssignment={handleMoveAssignment}
-          onQuickAdjust={handleQuickAdjust}
+          onToggleAssignmentComplete={handleToggleAssignmentComplete}
           onHoverTask={setHoveredTaskId}
+          onOpenDetail={setEditingTask}
         />
       </div>
       {editingTask && (
-        <HandDrawnPopup 
-          task={appState.tasks.find(t => t.id === editingTask)} 
+        <HandDrawnPopup
+          task={appState.tasks.find((task) => task.id === editingTask)}
+          availableTags={availableTags}
+          onCreateTag={handleCreateTagOption}
+          onDeleteTag={handleDeleteTagOption}
           onClose={() => setEditingTask(null)}
           onUpdate={handleUpdateTaskDetails}
         />

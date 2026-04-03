@@ -1,75 +1,24 @@
-import { Filter, LayoutList, Plus, SortAsc, SortDesc } from "lucide-react";
-import { useState } from "react";
-import TaskCard from "./TaskCard";
+import { Check, Filter, Plus, SortAsc, SortDesc } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import TaskListItem from "./TaskListItem";
 
-function TaskNode({
-  task,
-  allTasks,
-  boardState,
-  selectedTaskId,
-  hoveredTaskId,
-  onToggleParent,
-  onAdjustTime,
-  onDeleteTask,
-  onUpdateTaskTitle,
-  onCreateInlineTask,
-  onOpenDetail,
-  onHoverTask,
-  level = 0
-}) {
-  const children = allTasks.filter((item) => item.parentId === task.id);
-  const hasChildren = children.length > 0;
+const STATUS_OPTIONS = [
+  { value: "notstarted", label: "未着手" },
+  { value: "inprogress", label: "進行中" },
+  { value: "completed", label: "完了" }
+];
 
-  return (
-    <div className="mb-2">
-      <TaskCard
-        task={task}
-        allTasks={allTasks}
-        boardState={boardState}
-        isActive={selectedTaskId === task.id}
-        isRelated={hoveredTaskId === task.id}
-        onAdjustTime={onAdjustTime}
-        onDelete={onDeleteTask}
-        onToggleExpand={onToggleParent}
-        onUpdateTitle={onUpdateTaskTitle}
-        onAddSubtask={onCreateInlineTask}
-        onOpenDetail={onOpenDetail}
-        onHoverTask={onHoverTask}
-      />
-      {hasChildren && task.isExpanded && (
-        <div className="ml-3 mt-2 space-y-2 border-l-2 border-slate-100 pl-4">
-          {children.map((child) => (
-            <TaskNode
-              key={child.id}
-              task={child}
-              allTasks={allTasks}
-              boardState={boardState}
-              selectedTaskId={selectedTaskId}
-              hoveredTaskId={hoveredTaskId}
-              onToggleParent={onToggleParent}
-              onAdjustTime={onAdjustTime}
-              onDeleteTask={onDeleteTask}
-              onUpdateTaskTitle={onUpdateTaskTitle}
-              onCreateInlineTask={onCreateInlineTask}
-              onOpenDetail={onOpenDetail}
-              onHoverTask={onHoverTask}
-              level={level + 1}
-            />
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
+const SORT_OPTIONS = [
+  { key: "deadline", label: "期限" },
+  { key: "scheduledCount", label: "配置数" },
+  { key: "title", label: "タイトル" },
+  { key: "status", label: "ステータス" }
+];
 
 export default function TaskPool({
   tasks,
-  allTasks,
-  boardState,
   selectedTaskId,
   hoveredTaskId,
-  onToggleParent,
-  onAdjustTime,
   onCreateInlineTask,
   onDeleteTask,
   onUpdateTaskTitle,
@@ -78,12 +27,13 @@ export default function TaskPool({
   filterConfig,
   setFilterConfig,
   sortConfig,
-  setSortConfig
+  setSortConfig,
+  availableTags = []
 }) {
+  const filterRef = useRef(null);
+  const sortRef = useRef(null);
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [isSortOpen, setIsSortOpen] = useState(false);
-  const rootTasks = tasks.filter((task) => !task.parentId);
-  const allTags = Array.from(new Set(allTasks.flatMap((task) => task.tags || [])));
 
   const toggleSort = (key) => {
     setSortConfig((prev) => ({
@@ -92,117 +42,164 @@ export default function TaskPool({
     }));
   };
 
+  const toggleStatusFilter = (status) => {
+    setFilterConfig((prev) => {
+      const currentStatuses = prev.statuses || [];
+      const nextStatuses = currentStatuses.includes(status)
+        ? currentStatuses.filter((item) => item !== status)
+        : [...currentStatuses, status];
+
+      return { ...prev, statuses: nextStatuses };
+    });
+  };
+
+  const toggleTagFilter = (tag) => {
+    setFilterConfig((prev) => {
+      const currentTags = prev.tags || [];
+      const nextTags = currentTags.includes(tag) ? currentTags.filter((item) => item !== tag) : [...currentTags, tag];
+
+      return { ...prev, tags: nextTags };
+    });
+  };
+
+  useEffect(() => {
+    const handlePointerDown = (event) => {
+      if (isFilterOpen && filterRef.current && !filterRef.current.contains(event.target)) {
+        setIsFilterOpen(false);
+      }
+      if (isSortOpen && sortRef.current && !sortRef.current.contains(event.target)) {
+        setIsSortOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handlePointerDown);
+    return () => document.removeEventListener("mousedown", handlePointerDown);
+  }, [isFilterOpen, isSortOpen]);
+
   return (
     <div className="flex h-full flex-col">
-      <div className="mb-4 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <div className="flex h-6 w-6 items-center justify-center rounded-lg bg-blue-100">
-            <LayoutList className="h-3.5 w-3.5 text-blue-700" />
-          </div>
-          <div>
-            <h2 className="font-semibold text-slate-900">時間の在庫棚</h2>
-            <p className="text-xs text-slate-400">左の在庫から時間を切り出して、右に配置します</p>
-          </div>
+      <div className="mb-4 flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h2 className="text-lg font-semibold text-slate-900">タスク</h2>
         </div>
-        <span className="rounded-full bg-blue-100 px-3 py-1 text-xs font-semibold text-blue-700">
-          {tasks.length} tasks
-        </span>
+        <span className="shrink-0 rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600">{tasks.length}件</span>
       </div>
 
       <div className="mb-4 flex items-center gap-2">
         <button
           onClick={() => onCreateInlineTask(null)}
-          className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-blue-700 py-3 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-blue-800"
+          className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-slate-900 py-3 text-sm font-medium text-white transition-colors hover:bg-slate-800"
         >
           <Plus className="h-4 w-4" />
-          新規タスク
+          新しいタスク
         </button>
 
         <div className="flex gap-1">
-          <div className="relative">
+          <div className="relative" ref={filterRef}>
             <button
               onClick={() => {
-                setIsFilterOpen(!isFilterOpen);
+                setIsFilterOpen((prev) => !prev);
                 setIsSortOpen(false);
               }}
-              className="rounded-xl border border-slate-200 p-2 text-slate-500 hover:bg-slate-50"
+              className="rounded-xl border border-slate-200 bg-white p-2 text-slate-500 transition-colors hover:bg-slate-50"
+              title="フィルタ"
             >
               <Filter className="h-4 w-4" />
             </button>
             {isFilterOpen && (
-              <div className="absolute right-0 top-10 z-10 block w-40 rounded-md border border-slate-200 bg-white p-2 shadow-lg">
-                <div className="mb-2 px-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">Status</div>
-                {["all", "notstarted", "inprogress", "completed"].map((status) => (
-                  <button
-                    key={status}
-                    onClick={() => {
-                      setFilterConfig((prev) => ({ ...prev, status }));
-                      setIsFilterOpen(false);
-                    }}
-                    className={`mb-1 w-full rounded px-2 py-1 text-left text-xs transition-colors ${
-                      filterConfig.status === status ? "bg-blue-50 font-bold text-blue-700" : "text-slate-600 hover:bg-slate-50"
-                    }`}
-                  >
-                    {status === "all" ? "All Status" : status.charAt(0).toUpperCase() + status.slice(1)}
-                  </button>
-                ))}
-                <div className="my-2 border-t px-1 pt-2 text-[10px] font-bold uppercase tracking-wider text-slate-400">Tags</div>
-                <button
-                  onClick={() => {
-                    setFilterConfig((prev) => ({ ...prev, tag: "all" }));
-                    setIsFilterOpen(false);
-                  }}
-                  className={`mb-1 w-full rounded px-2 py-1 text-left text-xs transition-colors ${
-                    filterConfig.tag === "all" ? "bg-blue-50 font-bold text-blue-700" : "text-slate-600 hover:bg-slate-50"
-                  }`}
-                >
-                  All Tags
-                </button>
-                {allTags.map((tag) => (
-                  <button
-                    key={tag}
-                    onClick={() => {
-                      setFilterConfig((prev) => ({ ...prev, tag }));
-                      setIsFilterOpen(false);
-                    }}
-                    className={`mb-1 w-full rounded px-2 py-1 text-left text-xs transition-colors ${
-                      filterConfig.tag === tag ? "bg-blue-50 font-bold text-blue-700" : "text-slate-600 hover:bg-slate-50"
-                    }`}
-                  >
-                    {tag}
-                  </button>
-                ))}
+              <div className="absolute right-0 top-10 z-20 w-64 rounded-2xl border border-slate-200 bg-white p-3 shadow-lg">
+                <div className="mb-2 flex items-center justify-between">
+                  <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">Status</div>
+                  {!!(filterConfig.statuses || []).length && (
+                    <button
+                      onClick={() => setFilterConfig((prev) => ({ ...prev, statuses: [] }))}
+                      className="text-[11px] font-medium text-slate-500 transition-colors hover:text-slate-700"
+                    >
+                      クリア
+                    </button>
+                  )}
+                </div>
+                <div className="space-y-1">
+                  {STATUS_OPTIONS.map((status) => {
+                    const selected = (filterConfig.statuses || []).includes(status.value);
+
+                    return (
+                      <button
+                        key={status.value}
+                        onClick={() => toggleStatusFilter(status.value)}
+                        className={`flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm transition-colors ${
+                          selected ? "bg-slate-100 text-slate-900" : "text-slate-600 hover:bg-slate-50"
+                        }`}
+                      >
+                        <span>{status.label}</span>
+                        <span className={`flex h-4 w-4 items-center justify-center rounded-full border ${selected ? "border-slate-900 bg-slate-900 text-white" : "border-slate-300 bg-white text-transparent"}`}>
+                          <Check className="h-3 w-3" />
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <div className="my-3 border-t border-slate-100" />
+
+                <div className="mb-2 flex items-center justify-between">
+                  <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">Tags</div>
+                  {!!(filterConfig.tags || []).length && (
+                    <button
+                      onClick={() => setFilterConfig((prev) => ({ ...prev, tags: [] }))}
+                      className="text-[11px] font-medium text-slate-500 transition-colors hover:text-slate-700"
+                    >
+                      クリア
+                    </button>
+                  )}
+                </div>
+                <div className="space-y-1">
+                  {availableTags.map((tag) => {
+                    const selected = (filterConfig.tags || []).includes(tag);
+
+                    return (
+                      <button
+                        key={tag}
+                        onClick={() => toggleTagFilter(tag)}
+                        className={`flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm transition-colors ${
+                          selected ? "bg-slate-100 text-slate-900" : "text-slate-600 hover:bg-slate-50"
+                        }`}
+                      >
+                        <span>{tag}</span>
+                        <span className={`flex h-4 w-4 items-center justify-center rounded-full border ${selected ? "border-slate-900 bg-slate-900 text-white" : "border-slate-300 bg-white text-transparent"}`}>
+                          <Check className="h-3 w-3" />
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
             )}
           </div>
 
-          <div className="relative">
+          <div className="relative" ref={sortRef}>
             <button
               onClick={() => {
-                setIsSortOpen(!isSortOpen);
+                setIsSortOpen((prev) => !prev);
                 setIsFilterOpen(false);
               }}
-              className="rounded-xl border border-slate-200 p-2 text-slate-500 hover:bg-slate-50"
+              className="rounded-xl border border-slate-200 bg-white p-2 text-slate-500 transition-colors hover:bg-slate-50"
+              title="並び替え"
             >
               {sortConfig.order === "asc" ? <SortAsc className="h-4 w-4" /> : <SortDesc className="h-4 w-4" />}
             </button>
             {isSortOpen && (
-              <div className="absolute right-0 top-10 z-10 block w-40 rounded-md border border-slate-200 bg-white p-2 shadow-lg">
-                <div className="mb-2 px-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">Sort By</div>
-                {[
-                  { key: "deadline", label: "Deadline" },
-                  { key: "remainingTime", label: "Remaining" },
-                  { key: "title", label: "Name" },
-                  { key: "status", label: "Status" }
-                ].map((option) => (
+              <div className="absolute right-0 top-10 z-20 w-40 rounded-2xl border border-slate-200 bg-white p-2 shadow-lg">
+                <div className="mb-2 px-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">Sort</div>
+                {SORT_OPTIONS.map((option) => (
                   <button
                     key={option.key}
                     onClick={() => {
                       toggleSort(option.key);
                       setIsSortOpen(false);
                     }}
-                    className={`mb-1 w-full rounded px-2 py-1 text-left text-xs transition-colors ${
-                      sortConfig.key === option.key ? "bg-blue-50 font-bold text-blue-700" : "text-slate-600 hover:bg-slate-50"
+                    className={`mb-1 w-full rounded-xl px-3 py-2 text-left text-sm transition-colors ${
+                      sortConfig.key === option.key ? "bg-slate-100 font-medium text-slate-900" : "text-slate-600 hover:bg-slate-50"
                     }`}
                   >
                     {option.label}
@@ -214,20 +211,15 @@ export default function TaskPool({
         </div>
       </div>
 
-      <div className="space-y-2 overflow-y-auto pr-2">
-        {rootTasks.map((task) => (
-          <TaskNode
+      <div className="overflow-y-auto pr-1">
+        {tasks.map((task) => (
+          <TaskListItem
             key={task.id}
             task={task}
-            allTasks={allTasks}
-            boardState={boardState}
-            selectedTaskId={selectedTaskId}
-            hoveredTaskId={hoveredTaskId}
-            onToggleParent={onToggleParent}
-            onAdjustTime={onAdjustTime}
-            onDeleteTask={onDeleteTask}
-            onUpdateTaskTitle={onUpdateTaskTitle}
-            onCreateInlineTask={onCreateInlineTask}
+            isActive={selectedTaskId === task.id}
+            isRelated={hoveredTaskId === task.id}
+            onDelete={onDeleteTask}
+            onUpdateTitle={onUpdateTaskTitle}
             onOpenDetail={onOpenDetail}
             onHoverTask={onHoverTask}
           />

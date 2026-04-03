@@ -1,35 +1,48 @@
-export function attachDragPreview(event, { title, duration, color }) {
+import { getTaskPalette } from "./taskColors";
+
+export function attachDragPreview(event, { title, color }) {
+  const palette = getTaskPalette(color);
   const preview = document.createElement("div");
   preview.style.position = "fixed";
   preview.style.top = "-9999px";
   preview.style.left = "-9999px";
-  preview.style.padding = "10px 12px";
-  preview.style.borderRadius = "14px";
-  preview.style.border = `1px solid ${color || "#cbd5e1"}`;
-  preview.style.borderLeft = `4px solid ${color || "#94a3b8"}`;
-  preview.style.background = "rgba(255,255,255,0.96)";
-  preview.style.boxShadow = "0 18px 38px rgba(15, 23, 42, 0.16)";
-  preview.style.backdropFilter = "blur(8px)";
-  preview.style.minWidth = "150px";
+  preview.style.width = "168px";
+  preview.style.minHeight = "132px";
+  preview.style.padding = "12px";
+  preview.style.display = "flex";
+  preview.style.flexDirection = "column";
+  preview.style.justifyContent = "space-between";
+  preview.style.borderRadius = "16px";
+  preview.style.border = `1px solid ${palette.border}`;
+  preview.style.background = palette.surface;
+  preview.style.boxShadow = `0 8px 20px ${palette.shadow}`;
   preview.style.pointerEvents = "none";
 
   const titleNode = document.createElement("div");
-  titleNode.textContent = title || "タスク";
-  titleNode.style.fontSize = "12px";
-  titleNode.style.fontWeight = "700";
+  titleNode.textContent = title || "Task";
+  titleNode.style.fontSize = "14px";
+  titleNode.style.lineHeight = "22px";
+  titleNode.style.fontWeight = "600";
   titleNode.style.color = "#0f172a";
-  titleNode.style.marginBottom = "4px";
+  titleNode.style.wordBreak = "break-word";
 
-  const metaNode = document.createElement("div");
-  metaNode.textContent = `${duration}h を割り当て`;
-  metaNode.style.fontSize = "11px";
-  metaNode.style.fontWeight = "600";
-  metaNode.style.color = "#475569";
+  const footer = document.createElement("div");
+  footer.style.marginTop = "16px";
+  footer.style.display = "flex";
+  footer.style.justifyContent = "space-between";
+  footer.style.alignItems = "center";
 
+  const colorBar = document.createElement("div");
+  colorBar.style.height = "6px";
+  colorBar.style.width = "48px";
+  colorBar.style.borderRadius = "999px";
+  colorBar.style.background = palette.base;
+
+  footer.appendChild(colorBar);
   preview.appendChild(titleNode);
-  preview.appendChild(metaNode);
+  preview.appendChild(footer);
   document.body.appendChild(preview);
-  event.dataTransfer.setDragImage(preview, 18, 18);
+  event.dataTransfer.setDragImage(preview, 22, 18);
 
   return () => {
     preview.remove();
