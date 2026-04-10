@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef } from "react";
-import { getDateRangeDates, formatDate } from "../../utils/dateUtils";
+import { useCallback, useEffect, useMemo, useRef } from "react";
+import { formatMonthLabel, getDateRangeDates, formatDate } from "../../utils/dateUtils";
 import DayColumn from "./DayColumn";
 
 const DAY_COLUMN_WIDTH = 172;
@@ -10,7 +10,7 @@ export default function WeeklyBoard({
   tasks,
   hoveredTaskId,
   hoveredTaskDeadline,
-  hoveredTaskColor,
+  onVisibleMonthChange,
   onAddAssignmentFromSidebar,
   onDeleteAssignment,
   onMoveAssignment,
@@ -26,6 +26,15 @@ export default function WeeklyBoard({
   });
   const dates = useMemo(() => getDateRangeDates(baseDate, 15, 15), [baseDate]);
 
+  const syncVisibleMonth = useCallback(() => {
+    const container = scrollRef.current;
+    if (!container || dates.length === 0) return;
+
+    const centerIndex = Math.max(0, Math.min(dates.length - 1, Math.round((container.scrollLeft + container.clientWidth / 2) / DAY_COLUMN_WIDTH)));
+    const monthDate = new Date(`${dates[centerIndex].dateKey}T00:00:00`);
+    onVisibleMonthChange?.(formatMonthLabel(monthDate));
+  }, [dates, onVisibleMonthChange]);
+
   useEffect(() => {
     const container = scrollRef.current;
     if (!container) return;
@@ -35,7 +44,8 @@ export default function WeeklyBoard({
 
     const left = Math.max(0, targetIndex * DAY_COLUMN_WIDTH - (container.clientWidth - DAY_COLUMN_WIDTH) / 2);
     container.scrollTo({ left, behavior: "smooth" });
-  }, [baseDate, dates]);
+    requestAnimationFrame(syncVisibleMonth);
+  }, [baseDate, dates, syncVisibleMonth]);
 
   useEffect(() => {
     const handleMouseMove = (event) => {
@@ -45,6 +55,7 @@ export default function WeeklyBoard({
 
       const deltaX = event.clientX - panState.startX;
       container.scrollLeft = panState.startScrollLeft - deltaX;
+      syncVisibleMonth();
     };
 
     const stopPan = () => {
@@ -67,7 +78,7 @@ export default function WeeklyBoard({
       window.removeEventListener("mouseup", stopPan);
       document.body.style.userSelect = "";
     };
-  }, []);
+  }, [syncVisibleMonth]);
 
   const handleMouseDown = (event) => {
     const container = scrollRef.current;
@@ -89,6 +100,7 @@ export default function WeeklyBoard({
       <div
         ref={scrollRef}
         onMouseDown={handleMouseDown}
+        onScroll={syncVisibleMonth}
         className="custom-scrollbar flex w-full flex-1 cursor-grab overflow-x-auto overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]"
       >
         <div className="flex min-w-max divide-x divide-slate-200">
@@ -107,7 +119,6 @@ export default function WeeklyBoard({
                   tasks={tasks}
                   hoveredTaskId={hoveredTaskId}
                   hoveredTaskDeadline={hoveredTaskDeadline}
-                  hoveredTaskColor={hoveredTaskColor}
                   onAddAssignmentFromSidebar={onAddAssignmentFromSidebar}
                   onDeleteAssignment={(assignmentId) => onDeleteAssignment(day.dateKey, assignmentId)}
                   onMoveAssignment={onMoveAssignment}

@@ -3,6 +3,8 @@ import clsx from "clsx";
 import { Check, RotateCcw, X } from "lucide-react";
 import { attachDragPreview } from "../../utils/dragPreview";
 import { getTaskPalette } from "../../utils/taskColors";
+import { clearCurrentDrag, setCurrentDrag } from "../../utils/dragState";
+import { getRecurringDeadlineDateKey, getRecurringDeadlineLabel, isRecurringTask } from "../../utils/recurrence";
 
 export default function AssignedBlock({
   assignment,
@@ -24,17 +26,42 @@ export default function AssignedBlock({
     <div className="w-full px-1 py-1">
       <div
         draggable
-        onMouseEnter={() => onHoverTask(task.id)}
+        onMouseEnter={() =>
+          onHoverTask(
+            task.id,
+            isRecurringTask(task)
+              ? {
+                  deadlineDateKey: getRecurringDeadlineDateKey(task, assignment.recurrenceKey || sourceDayIdx),
+                  deadlineLabel: getRecurringDeadlineLabel(task)
+                }
+              : { deadlineDateKey: task.deadline || null, deadlineLabel: task.deadline || null }
+          )
+        }
         onMouseLeave={() => onHoverTask(null)}
         onClick={() => onOpenDetail(task.id)}
         onDragStart={(event) => {
           setIsDragging(true);
+          const payload = {
+            dragType: "move",
+            taskId: task.id,
+            assignmentId: assignment.id,
+            sourceDayIdx,
+            dragTitle: task.title || "Task",
+            dragColor: task.color || "#94a3b8"
+          };
           event.dataTransfer.effectAllowed = "move";
           event.dataTransfer.setData("sourceDayIdx", sourceDayIdx);
+          event.dataTransfer.setData("application/x-source-day", sourceDayIdx);
           event.dataTransfer.setData("assignmentId", assignment.id);
+          event.dataTransfer.setData("application/x-assignment-id", assignment.id);
+          event.dataTransfer.setData("taskId", task.id);
+          event.dataTransfer.setData("text/plain", JSON.stringify(payload));
+          event.dataTransfer.setData("application/x-task-id", task.id);
           event.dataTransfer.setData("dragType", "move");
+          event.dataTransfer.setData("application/x-drag-type", "move");
           event.dataTransfer.setData("dragTitle", task.title || "Task");
           event.dataTransfer.setData("dragColor", task.color || "#94a3b8");
+          setCurrentDrag(payload);
           dragCleanupRef.current = attachDragPreview(event, {
             title: task.title || "Task",
             color: task.color || "#94a3b8"
@@ -42,6 +69,7 @@ export default function AssignedBlock({
         }}
         onDragEnd={() => {
           setIsDragging(false);
+          clearCurrentDrag();
           dragCleanupRef.current?.();
           dragCleanupRef.current = null;
         }}
@@ -51,7 +79,7 @@ export default function AssignedBlock({
           boxShadow: isRelated ? `0 8px 20px ${palette.shadow}` : "0 1px 2px rgba(15, 23, 42, 0.06)"
         }}
         className={clsx(
-          "relative flex min-h-[132px] cursor-pointer select-none flex-col justify-between overflow-hidden rounded-2xl border p-3 transition-all",
+          "relative flex h-auto cursor-pointer select-none flex-col gap-3 overflow-hidden rounded-2xl border p-3 transition-all",
           isDragging && "scale-[0.99] opacity-60",
           assignment.completed && "opacity-75"
         )}
@@ -69,15 +97,13 @@ export default function AssignedBlock({
               onDelete(assignment.id);
             }}
             className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-red-50 hover:text-red-600"
-            title="削除"
+            title="Delete"
           >
             <X className="h-3.5 w-3.5" />
           </button>
         </div>
 
-        <div className="mt-4 flex items-end justify-between gap-3">
-          <div className="h-1.5 w-12 rounded-full" style={{ backgroundColor: palette.base }} />
-
+        <div className="flex items-center justify-end">
           <button
             onClick={(event) => {
               event.stopPropagation();
@@ -91,7 +117,7 @@ export default function AssignedBlock({
             )}
           >
             {assignment.completed ? <RotateCcw className="h-3.5 w-3.5" /> : <Check className="h-3.5 w-3.5" />}
-            {assignment.completed ? "戻す" : "完了"}
+            {assignment.completed ? "Complete" : "Done"}
           </button>
         </div>
       </div>

@@ -5,6 +5,8 @@ export const formatDate = (date) => {
   return `${y}-${m}-${d}`;
 };
 
+export const formatMonthLabel = (date) => `${date.getFullYear()}年${date.getMonth() + 1}月`;
+
 export const startOfWeek = (date) => {
   const d = new Date(date);
   const day = d.getDay();
@@ -58,7 +60,7 @@ export const getDateRangeDates = (centerDate, daysBefore = 15, daysAfter = 15) =
       dateKey: formatDate(current),
       dayName: WEEKDAY_LABELS[weekdayIndex],
       dateNum: current.getDate(),
-      monthLabel: `${current.getFullYear()}年${current.getMonth() + 1}月`,
+      monthLabel: formatMonthLabel(current),
       isToday: formatDate(current) === formatDate(new Date())
     };
   });

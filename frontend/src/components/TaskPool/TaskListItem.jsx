@@ -1,7 +1,10 @@
 import clsx from "clsx";
 import { useEffect, useRef, useState } from "react";
 import { Trash2 } from "lucide-react";
+import { attachDragPreview } from "../../utils/dragPreview";
 import { getTaskPalette } from "../../utils/taskColors";
+import { clearCurrentDrag, setCurrentDrag } from "../../utils/dragState";
+import { getRecurrenceSummary } from "../../utils/recurrence";
 
 const STATUS_LABELS = {
   NotStarted: "未着手",
@@ -15,12 +18,23 @@ const STATUS_STYLES = {
   Completed: "bg-emerald-50 text-emerald-700"
 };
 
-export default function TaskListItem({ task, isActive, isRelated, onDelete, onUpdateTitle, onOpenDetail, onHoverTask }) {
+export default function TaskListItem({
+  task,
+  isActive,
+  isRelated,
+  suppressInlineTitleAutoEdit,
+  onDelete,
+  onUpdateTitle,
+  onOpenDetail,
+  onHoverTask
+}) {
   const { id, title, color, status = "NotStarted", deadline } = task;
   const titleInputRef = useRef(null);
-  const [isEditingTitle, setIsEditingTitle] = useState(() => !title?.trim());
+  const dragCleanupRef = useRef(null);
+  const [isEditingTitle, setIsEditingTitle] = useState(() => !title?.trim() && !suppressInlineTitleAutoEdit);
   const palette = getTaskPalette(color);
   const isCompleted = status === "Completed";
+  const placementLabel = task.placementType === "recurring" ? getRecurrenceSummary(task) : "指定配置";
 
   useEffect(() => {
     if (isEditingTitle && titleInputRef.current) {
@@ -30,10 +44,11 @@ export default function TaskListItem({ task, isActive, isRelated, onDelete, onUp
   }, [isEditingTitle]);
 
   useEffect(() => {
-    if (!title?.trim()) {
-      setIsEditingTitle(true);
-    }
-  }, [title]);
+    return () => {
+      dragCleanupRef.current?.();
+      dragCleanupRef.current = null;
+    };
+  }, []);
 
   return (
     <div
@@ -54,7 +69,7 @@ export default function TaskListItem({ task, isActive, isRelated, onDelete, onUp
             }
           : isActive
             ? { borderColor: palette.border, boxShadow: `0 8px 18px ${palette.shadow}` }
-          : isCompleted
+            : isCompleted
               ? { borderColor: palette.completedBorder, backgroundColor: palette.completedSurface }
               : { backgroundColor: "white" }),
         backgroundColor: isCompleted ? palette.completedSurface : "white"
@@ -66,21 +81,42 @@ export default function TaskListItem({ task, isActive, isRelated, onDelete, onUp
           return;
         }
 
+        const payload = {
+          dragType: "new",
+          taskId: id,
+          dragTitle: title || "タスク",
+          dragColor: color || "#94a3b8",
+          dragDeadline: deadline || ""
+        };
         event.dataTransfer.effectAllowed = "copy";
         event.dataTransfer.setData("taskId", id);
+        event.dataTransfer.setData("text/plain", JSON.stringify(payload));
+        event.dataTransfer.setData("application/x-task-id", id);
         event.dataTransfer.setData("dragType", "new");
-        event.dataTransfer.setData("dragTitle", title || "Task");
+        event.dataTransfer.setData("application/x-drag-type", "new");
+        event.dataTransfer.setData("dragTitle", title || "タスク");
         event.dataTransfer.setData("dragColor", color || "#94a3b8");
         event.dataTransfer.setData("dragDeadline", deadline || "");
+        setCurrentDrag(payload);
+        dragCleanupRef.current = attachDragPreview(event, {
+          title: title || "タスク",
+          color: color || "#94a3b8",
+          completed: isCompleted
+        });
       }}
-      onDragEnd={() => {}}
+      onDragEnd={() => {
+        clearCurrentDrag();
+        dragCleanupRef.current?.();
+        dragCleanupRef.current = null;
+      }}
     >
       <div className="h-10 w-1 shrink-0 rounded-full" style={{ backgroundColor: color || "#94a3b8" }} />
 
       <div className="min-w-0 flex-1">
         <div className="mb-1 flex flex-wrap items-center gap-2">
           <span className={clsx("rounded-full px-2 py-0.5 text-[11px] font-medium", STATUS_STYLES[status])}>{STATUS_LABELS[status]}</span>
-          {deadline ? <span className="text-[12px] text-slate-400">期限 {deadline}</span> : null}
+          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600">{placementLabel}</span>
+          {task.placementType === "recurring" ? null : deadline ? <span className="text-[12px] text-slate-400">期限 {deadline}</span> : null}
         </div>
 
         {isEditingTitle ? (
@@ -101,7 +137,7 @@ export default function TaskListItem({ task, isActive, isRelated, onDelete, onUp
           />
         ) : (
           <div className={clsx("truncate text-sm font-semibold text-slate-900", isCompleted && "line-through")} style={isCompleted ? { color: palette.mutedText } : undefined}>
-            {title || "Untitled"}
+            {title || "未設定"}
           </div>
         )}
       </div>

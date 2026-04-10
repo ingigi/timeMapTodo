@@ -8,6 +8,7 @@ yarn-error.log*
 dist/
 build/
 release/
+frontend/release-*/
 
 # Electron build
 out/

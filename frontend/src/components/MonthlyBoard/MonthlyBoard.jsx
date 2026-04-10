@@ -1,6 +1,8 @@
-import { useMemo } from "react";
-import { addMonths, getMonthDates } from "../../utils/dateUtils";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { getMonthDates } from "../../utils/dateUtils";
 import MonthlyDay from "./MonthlyDay";
+
+const MONTH_WEEKDAY_LABELS = ["月", "火", "水", "木", "金", "土", "日"];
 
 function MonthSection({
   monthDate,
@@ -8,7 +10,6 @@ function MonthSection({
   tasks,
   hoveredTaskId,
   hoveredTaskDeadline,
-  hoveredTaskColor,
   onAddAssignmentFromSidebar,
   onDeleteAssignment,
   onMoveAssignment,
@@ -26,13 +27,8 @@ function MonthSection({
 
   return (
     <section className="mb-8">
-      <div className="sticky top-0 z-10 mb-3 flex items-center justify-between rounded-2xl border border-slate-200 bg-white/95 px-4 py-3 backdrop-blur">
-        <div className="text-sm font-semibold text-slate-900">{monthLabel}</div>
-        <div className="text-xs font-medium uppercase tracking-[0.16em] text-slate-400">Month View</div>
-      </div>
-
       <div className="grid grid-cols-7 gap-px rounded-2xl border border-slate-200 bg-slate-200">
-        {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((dayName) => (
+        {MONTH_WEEKDAY_LABELS.map((dayName) => (
           <div key={`${monthLabel}-${dayName}`} className="bg-white py-2 text-center text-xs font-bold tracking-wider text-slate-500">
             {dayName}
           </div>
@@ -50,7 +46,6 @@ function MonthSection({
                 tasks={tasks}
                 hoveredTaskId={hoveredTaskId}
                 hoveredTaskDeadline={hoveredTaskDeadline}
-                hoveredTaskColor={hoveredTaskColor}
                 onAddAssignmentFromSidebar={onAddAssignmentFromSidebar}
                 onDeleteAssignment={onDeleteAssignment}
                 onMoveAssignment={onMoveAssignment}
@@ -67,11 +62,34 @@ function MonthSection({
 }
 
 export default function MonthlyBoard(props) {
-  const months = useMemo(() => [addMonths(props.baseDate, -1), props.baseDate, addMonths(props.baseDate, 1)], [props.baseDate]);
+  const months = useMemo(() => [props.baseDate], [props.baseDate]);
+  const viewportRef = useRef(null);
+  const [contentWidth, setContentWidth] = useState(0);
+
+  useEffect(() => {
+    const element = viewportRef.current;
+    if (!element) return;
+
+    const updateWidth = () => {
+      const viewportWidth = element.clientWidth || 0;
+      const preferredWidth = 980;
+      setContentWidth(Math.max(viewportWidth, preferredWidth));
+    };
+
+    updateWidth();
+
+    const observer = new ResizeObserver(updateWidth);
+    observer.observe(element);
+
+    return () => observer.disconnect();
+  }, []);
 
   return (
-    <div className="h-full select-none overflow-y-auto pr-1 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
-      <div className="pb-6">
+    <div
+      ref={viewportRef}
+      className="h-full select-none overflow-auto pr-1 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]"
+    >
+      <div className="pb-6" style={contentWidth ? { minWidth: `${contentWidth}px` } : { minWidth: "100%" }}>
         {months.map((monthDate) => (
           <MonthSection key={`${monthDate.getFullYear()}-${monthDate.getMonth()}`} monthDate={monthDate} {...props} />
         ))}

@@ -45,11 +45,45 @@ app.on('window-all-closed', function () {
 // IPC ハンドラ - データ保存/読み込み
 const dataFilePath = path.join(app.getPath('userData'), 'timeMapTodoData.json');
 
+function normalizeStoredData(data) {
+  if (!data || typeof data !== 'object') {
+    return data;
+  }
+
+  const normalizedTasks = Array.isArray(data.tasks)
+    ? data.tasks.map((task) => ({
+        ...task,
+        placementType: task?.placementType === 'recurring' || task?.placementType === 'auto' ? 'recurring' : 'manual',
+        recurrence: task?.placementType === 'recurring' || task?.placementType === 'auto' ? task.recurrence || null : null
+      }))
+    : [];
+
+  const normalizedBoardState = Object.fromEntries(
+    Object.entries(data.boardState || {}).map(([dateKey, assignments]) => [
+      dateKey,
+      Array.isArray(assignments)
+        ? assignments.map((assignment) => ({
+            ...assignment,
+            source: assignment?.source === 'auto' ? 'auto' : assignment?.source === 'recurring' ? 'recurring' : 'manual',
+            recurrenceTaskId: assignment?.recurrenceTaskId || null,
+            recurrenceKey: assignment?.recurrenceKey || null
+          }))
+        : []
+    ])
+  );
+
+  return {
+    ...data,
+    tasks: normalizedTasks,
+    boardState: normalizedBoardState
+  };
+}
+
 ipcMain.handle('load-data', async () => {
   try {
     if (fs.existsSync(dataFilePath)) {
       const data = await fs.promises.readFile(dataFilePath, 'utf8');
-      return JSON.parse(data);
+      return normalizeStoredData(JSON.parse(data));
     }
   } catch (error) {
     console.error('Failed to load data', error);
@@ -60,7 +94,7 @@ ipcMain.handle('load-data', async () => {
 // 保存処理を handle (async) に変更し、非同期で書き込むようにする
 ipcMain.handle('save-data', async (event, data) => {
   try {
-    await fs.promises.writeFile(dataFilePath, JSON.stringify(data), 'utf8');
+    await fs.promises.writeFile(dataFilePath, JSON.stringify(normalizeStoredData(data)), 'utf8');
     return { success: true };
   } catch (error) {
     console.error('Failed to save data', error);

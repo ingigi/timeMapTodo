@@ -3,6 +3,8 @@ import { useEffect, useRef, useState } from "react";
 import { GripVertical, Trash2 } from "lucide-react";
 import { attachDragPreview } from "../../utils/dragPreview";
 import { getTaskPalette } from "../../utils/taskColors";
+import { clearCurrentDrag, setCurrentDrag } from "../../utils/dragState";
+import { getRecurrenceSummary } from "../../utils/recurrence";
 
 const STATUS_LABELS = {
   NotStarted: "未着手",
@@ -16,13 +18,24 @@ const STATUS_STYLES = {
   Completed: "bg-emerald-50 text-emerald-700"
 };
 
-export default function TaskCard({ task, isActive, isRelated, onDelete, onUpdateTitle, onOpenDetail, onHoverTask }) {
+export default function TaskCard({
+  task,
+  isActive,
+  isRelated,
+  suppressInlineTitleAutoEdit,
+  onDelete,
+  onUpdateTitle,
+  onOpenDetail,
+  onHoverTask
+}) {
   const { id, title, color, status = "NotStarted", deadline } = task;
   const titleInputRef = useRef(null);
   const dragCleanupRef = useRef(null);
-  const [isEditingTitle, setIsEditingTitle] = useState(() => !title?.trim());
+  const [isEditingTitle, setIsEditingTitle] = useState(() => !title?.trim() && !suppressInlineTitleAutoEdit);
   const [isDragging, setIsDragging] = useState(false);
   const palette = getTaskPalette(color);
+  const isCompleted = status === "Completed";
+  const placementLabel = task.placementType === "recurring" ? getRecurrenceSummary(task) : "指定配置";
 
   useEffect(() => {
     if (isEditingTitle && titleInputRef.current) {
@@ -30,12 +43,6 @@ export default function TaskCard({ task, isActive, isRelated, onDelete, onUpdate
       titleInputRef.current.select();
     }
   }, [isEditingTitle]);
-
-  useEffect(() => {
-    if (!title?.trim()) {
-      setIsEditingTitle(true);
-    }
-  }, [title]);
 
   return (
     <div
@@ -66,18 +73,31 @@ export default function TaskCard({ task, isActive, isRelated, onDelete, onUpdate
         }
 
         setIsDragging(true);
+        const payload = {
+          dragType: "new",
+          taskId: id,
+          dragTitle: title || "タスク",
+          dragColor: color || "#94a3b8",
+          dragDeadline: deadline || ""
+        };
         event.dataTransfer.effectAllowed = "copy";
         event.dataTransfer.setData("taskId", id);
+        event.dataTransfer.setData("text/plain", JSON.stringify(payload));
+        event.dataTransfer.setData("application/x-task-id", id);
         event.dataTransfer.setData("dragType", "new");
-        event.dataTransfer.setData("dragTitle", title || "Task");
+        event.dataTransfer.setData("application/x-drag-type", "new");
+        event.dataTransfer.setData("dragTitle", title || "タスク");
         event.dataTransfer.setData("dragColor", color || "#94a3b8");
+        setCurrentDrag(payload);
         dragCleanupRef.current = attachDragPreview(event, {
-          title: title || "Task",
-          color: color || "#94a3b8"
+          title: title || "タスク",
+          color: color || "#94a3b8",
+          completed: isCompleted
         });
       }}
       onDragEnd={() => {
         setIsDragging(false);
+        clearCurrentDrag();
         dragCleanupRef.current?.();
         dragCleanupRef.current = null;
       }}
@@ -90,7 +110,8 @@ export default function TaskCard({ task, isActive, isRelated, onDelete, onUpdate
         <div className="min-w-0 flex-1">
           <div className="mb-2 flex items-center gap-2">
             <span className={clsx("rounded-full px-2 py-0.5 text-[11px] font-semibold", STATUS_STYLES[status])}>{STATUS_LABELS[status]}</span>
-            {deadline ? <span className="text-[12px] text-slate-400">期限 {deadline}</span> : null}
+            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600">{placementLabel}</span>
+            {task.placementType === "recurring" ? null : deadline ? <span className="text-[12px] text-slate-400">期限 {deadline}</span> : null}
           </div>
 
           {isEditingTitle ? (
@@ -109,7 +130,7 @@ export default function TaskCard({ task, isActive, isRelated, onDelete, onUpdate
               className="w-full select-text border-none bg-transparent text-[22px] font-semibold leading-snug text-slate-900 outline-none placeholder:text-slate-300"
             />
           ) : (
-            <h3 className="break-words text-[22px] font-semibold leading-snug text-slate-900">{title}</h3>
+            <h3 className="break-words text-[22px] font-semibold leading-snug text-slate-900">{title || "未設定"}</h3>
           )}
         </div>
 

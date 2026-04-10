@@ -20,6 +20,12 @@ export function getTaskAssignments(taskId, tasks, boardState) {
   );
 }
 
+export function hasTaskAssignmentOnDate(boardState, dateKey, taskId, excludeAssignmentId = null) {
+  return (boardState[dateKey] || []).some(
+    (assignment) => assignment.taskId === taskId && assignment.id !== excludeAssignmentId
+  );
+}
+
 export function getTaskStats(taskId, tasks, boardState) {
   const assignments = getTaskAssignments(taskId, tasks, boardState);
   const scheduledCount = assignments.length;
