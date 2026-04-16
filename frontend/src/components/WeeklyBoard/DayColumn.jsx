@@ -1,7 +1,6 @@
 import { useState } from "react";
 import AssignedBlock from "./AssignedBlock";
 import { getDeadlinePalette, getTaskPalette } from "../../utils/taskColors";
-import { hasTaskAssignmentOnDate } from "../../utils/taskTime";
 import { getCurrentDrag } from "../../utils/dragState";
 
 export default function DayColumn({
@@ -10,27 +9,21 @@ export default function DayColumn({
   dateNum,
   monthLabel,
   isToday,
-  assignments,
-  tasks,
+  dayTasks,
   hoveredTaskId,
   hoveredTaskDeadline,
-  onAddAssignmentFromSidebar,
-  onDeleteAssignment,
-  onMoveAssignment,
-  onToggleAssignmentComplete,
+  onScheduleTask,
+  onUnscheduleTask,
+  onMoveTask,
+  onToggleTaskComplete,
   onHoverTask,
   onOpenDetail
 }) {
   const [isDragOver, setIsDragOver] = useState(false);
-  const [isDropBlocked, setIsDropBlocked] = useState(false);
   const [dragColor, setDragColor] = useState(null);
   const isDeadlineDay = hoveredTaskDeadline === dateKey;
   const deadlinePalette = getDeadlinePalette();
   const dropPalette = getTaskPalette(dragColor);
-  const blockedStyle = {
-    boxShadow: "inset 0 0 0 3px #cbd5e1",
-    backgroundColor: "#f8fafc"
-  };
 
   const readDragPayload = (event) => {
     const rawText = event.dataTransfer.getData("text/plain");
@@ -41,43 +34,26 @@ export default function DayColumn({
           return parsed;
         }
       } catch {
-        // fallback to individual fields below
+        // Ignore invalid drag payloads.
       }
     }
 
-    const cached = getCurrentDrag();
-    if (cached) {
-      return cached;
-    }
-
-    return {
-      taskId:
-        event.dataTransfer.getData("taskId") ||
-        event.dataTransfer.getData("application/x-task-id") ||
-        rawText ||
-        "",
-      assignmentId: event.dataTransfer.getData("assignmentId") || event.dataTransfer.getData("application/x-assignment-id") || null,
-      sourceDayIdx: event.dataTransfer.getData("sourceDayIdx") || event.dataTransfer.getData("application/x-source-day") || "",
-      dragType: event.dataTransfer.getData("dragType") || event.dataTransfer.getData("application/x-drag-type") || ""
-    };
+    return getCurrentDrag();
   };
 
   return (
-    <div
-      className="flex min-w-[160px] flex-1 flex-col overflow-hidden border border-slate-200 bg-white"
-    >
+    <div className="flex min-w-[160px] flex-1 flex-col overflow-hidden border border-slate-200 bg-white">
       <div
         className="sticky top-0 z-20 border-b border-slate-100 bg-white p-3 text-center transition-colors"
-        style={{
-          ...(isDropBlocked ? blockedStyle : {}),
-          ...(isDeadlineDay
+        style={
+          isDeadlineDay
             ? {
                 backgroundColor: deadlinePalette.surface,
                 borderBottomColor: deadlinePalette.border,
                 boxShadow: `inset 0 -1px 0 ${deadlinePalette.border}, inset 0 0 0 1px ${deadlinePalette.border}`
               }
-            : {})
-        }}
+            : undefined
+        }
       >
         <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-300">{monthLabel}</div>
         <div
@@ -93,84 +69,61 @@ export default function DayColumn({
           >
             {dateNum}
           </div>
-          <div className="inline-block rounded-full bg-slate-50 px-2 py-1 text-[10px] font-semibold text-slate-500">Tasks {assignments.length}</div>
         </div>
       </div>
 
       <div
-        style={{
-          ...(isDropBlocked
-            ? blockedStyle
-            : {}),
-          ...(isDragOver && !isDropBlocked
+        style={
+          isDragOver
             ? {
                 boxShadow: `inset 0 0 0 3px ${dropPalette.borderStrong}`,
                 backgroundColor: dropPalette.surfaceStrong
               }
-            : {})
-        }}
-        className={`relative min-h-[600px] w-full flex-1 transition-all ${isDropBlocked ? "bg-slate-100" : "bg-white"}`}
+            : undefined
+        }
+        className="relative min-h-[600px] w-full flex-1 bg-white transition-all"
         onDragOver={(event) => {
-          event.preventDefault();
           const payload = readDragPayload(event);
-          const taskId = payload.taskId || "";
-          const assignmentId = payload.assignmentId || null;
-          const isMoveDrag = payload.dragType === "move" || Boolean(assignmentId);
-          const blocked = taskId ? hasTaskAssignmentOnDate({ [dateKey]: assignments }, dateKey, taskId, isMoveDrag ? assignmentId : null) : false;
-
+          if (!payload?.taskId) return;
+          event.preventDefault();
           if (!isDragOver) setIsDragOver(true);
-          setIsDropBlocked(blocked);
           setDragColor(event.dataTransfer.getData("dragColor") || "#94a3b8");
-          event.dataTransfer.dropEffect = isMoveDrag ? "move" : "copy";
+          event.dataTransfer.dropEffect = "move";
         }}
         onDragLeave={(event) => {
           if (!event.currentTarget.contains(event.relatedTarget)) {
             setIsDragOver(false);
-            setIsDropBlocked(false);
             setDragColor(null);
           }
         }}
         onDrop={(event) => {
-          event.preventDefault();
           const payload = readDragPayload(event);
-          const taskId = payload.taskId || "";
-          const sourceDayIdxData = payload.sourceDayIdx || "";
-          const assignmentId = payload.assignmentId || null;
-          const isMoveDrag = payload.dragType === "move" || Boolean(assignmentId);
-          if (isDropBlocked) {
-            setIsDragOver(false);
-            setIsDropBlocked(false);
-            setDragColor(null);
-            return;
-          }
+          if (!payload?.taskId) return;
+          event.preventDefault();
           setIsDragOver(false);
-          setIsDropBlocked(false);
           setDragColor(null);
 
-          if (taskId && !isMoveDrag) {
-            onAddAssignmentFromSidebar(taskId, dateKey);
-          } else if (sourceDayIdxData && assignmentId) {
-            onMoveAssignment(sourceDayIdxData, dateKey, assignmentId);
+          if (payload.sourceDateKey) {
+            onMoveTask(payload.taskId, dateKey);
+            return;
           }
+
+          onScheduleTask(payload.taskId, dateKey);
         }}
       >
         <div className="relative z-10 flex h-full w-full flex-col p-1">
-          {assignments.map((assignment) => {
-            const task = tasks.find((item) => item.id === assignment.taskId);
-            return (
-              <AssignedBlock
-                key={assignment.id}
-                assignment={assignment}
-                task={task}
-                isRelated={hoveredTaskId === assignment.taskId}
-                onDelete={onDeleteAssignment}
-                onToggleComplete={onToggleAssignmentComplete}
-                onHoverTask={onHoverTask}
-                onOpenDetail={onOpenDetail}
-                sourceDayIdx={dateKey}
-              />
-            );
-          })}
+          {dayTasks.map((task) => (
+            <AssignedBlock
+              key={task.id}
+              task={task}
+              dateKey={dateKey}
+              isRelated={hoveredTaskId === task.id}
+              onUnscheduleTask={onUnscheduleTask}
+              onToggleTaskComplete={onToggleTaskComplete}
+              onHoverTask={onHoverTask}
+              onOpenDetail={onOpenDetail}
+            />
+          ))}
         </div>
       </div>
     </div>

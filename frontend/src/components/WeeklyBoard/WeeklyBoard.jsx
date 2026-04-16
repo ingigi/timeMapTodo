@@ -6,15 +6,15 @@ const DAY_COLUMN_WIDTH = 172;
 
 export default function WeeklyBoard({
   baseDate,
-  boardState,
+  scheduledTasksByDate,
   tasks,
   hoveredTaskId,
   hoveredTaskDeadline,
   onVisibleMonthChange,
-  onAddAssignmentFromSidebar,
-  onDeleteAssignment,
-  onMoveAssignment,
-  onToggleAssignmentComplete,
+  onScheduleTask,
+  onUnscheduleTask,
+  onMoveTask,
+  onToggleTaskComplete,
   onHoverTask,
   onOpenDetail
 }) {
@@ -105,7 +105,7 @@ export default function WeeklyBoard({
       >
         <div className="flex min-w-max divide-x divide-slate-200">
           {dates.map((day) => {
-            const assignments = boardState[day.dateKey] || [];
+            const dayTasks = scheduledTasksByDate[day.dateKey] || [];
 
             return (
               <div key={day.dateKey} style={{ width: `${DAY_COLUMN_WIDTH}px`, minWidth: `${DAY_COLUMN_WIDTH}px` }}>
@@ -115,14 +115,14 @@ export default function WeeklyBoard({
                   dateNum={day.dateNum}
                   monthLabel={day.monthLabel}
                   isToday={day.isToday}
-                  assignments={assignments}
+                  dayTasks={dayTasks}
                   tasks={tasks}
                   hoveredTaskId={hoveredTaskId}
                   hoveredTaskDeadline={hoveredTaskDeadline}
-                  onAddAssignmentFromSidebar={onAddAssignmentFromSidebar}
-                  onDeleteAssignment={(assignmentId) => onDeleteAssignment(day.dateKey, assignmentId)}
-                  onMoveAssignment={onMoveAssignment}
-                  onToggleAssignmentComplete={onToggleAssignmentComplete}
+                  onScheduleTask={onScheduleTask}
+                  onUnscheduleTask={onUnscheduleTask}
+                  onMoveTask={onMoveTask}
+                  onToggleTaskComplete={onToggleTaskComplete}
                   onHoverTask={onHoverTask}
                   onOpenDetail={onOpenDetail}
                 />

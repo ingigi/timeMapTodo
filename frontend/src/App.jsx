@@ -3,8 +3,8 @@ import MainLayout from "./components/layout/MainLayout";
 import TaskPool from "./components/TaskPool/TaskPool";
 import CalendarArea from "./components/CalendarArea/CalendarArea";
 import HandDrawnPopup from "./components/Common/HandDrawnPopup";
-import { getTaskStats, getTaskStatus, hasTaskAssignmentOnDate } from "./utils/taskTime";
-import { getRecurringDeadlineDateKey, isRecurringTask, syncRecurringAssignmentsForTask } from "./utils/recurrence";
+import { getTaskStats, getTaskStatus } from "./utils/taskTime";
+import { materializeWorkflowTasks, normalizeWorkflowRecord } from "./utils/workflows";
 
 const TASK_COLORS = ["#5B8DEF", "#4FB7A8", "#D9A441", "#8A7FD1", "#7FA36B", "#C97B63", "#5FA3B7", "#C27A92"];
 const UI_STORAGE_KEY = "timemaptodo-ui-settings-v1";
@@ -49,37 +49,24 @@ const readPersistedUiSettings = () => {
 
 const MOCK_TASKS = [
   {
-    id: "p1",
-    title: "Q4 Product Launch",
-    color: TASK_COLORS[0],
-    isExpanded: true,
-    tags: ["Strategic"],
-    deadline: "2026-04-30",
-    description: "Launch planning and cross-team coordination",
-    placementType: "manual",
-    recurrence: null
-  },
-  {
     id: "t1",
-    parentId: "p1",
     title: "User interview synthesis",
     color: TASK_COLORS[0],
     tags: ["Research"],
     deadline: "2026-04-10",
     description: "Summarize recent user interviews",
-    placementType: "manual",
-    recurrence: null
+    scheduledDate: null,
+    completed: false
   },
   {
     id: "t2",
-    parentId: "p1",
     title: "Landing page polish",
     color: TASK_COLORS[0],
     tags: ["Design"],
     deadline: "2026-04-15",
     description: "Tighten copy and final visuals",
-    placementType: "manual",
-    recurrence: null
+    scheduledDate: "2026-04-14",
+    completed: false
   },
   {
     id: "t3",
@@ -88,45 +75,70 @@ const MOCK_TASKS = [
     tags: ["Dev", "Refactor"],
     deadline: "2026-04-20",
     description: "Reduce legacy endpoints and simplify payloads",
-    placementType: "manual",
-    recurrence: null
+    scheduledDate: null,
+    completed: false
   }
 ];
 
-const normalizeTaskRecord = (task) => ({
-  ...task,
-  placementType: task?.placementType === "recurring" || task?.placementType === "auto" ? "recurring" : "manual",
-  recurrence: (task?.placementType === "recurring" || task?.placementType === "auto") && task?.recurrence ? task.recurrence : null
+const normalizeTaskRecord = (task, index = 0) => ({
+  id: task.id,
+  title: task.title || "",
+  color: task.color || TASK_COLORS[index % TASK_COLORS.length],
+  tags: Array.isArray(task.tags) ? task.tags : [],
+  deadline: task.deadline || null,
+  description: task.description || "",
+  scheduledDate: task.scheduledDate || null,
+  completed: Boolean(task.completed),
+  sourceWorkflowId: task.sourceWorkflowId || null,
+  workflowRunKey: task.workflowRunKey || null
 });
 
-const normalizeLoadedBoardState = (boardState = {}) =>
-  Object.fromEntries(
-    Object.entries(boardState).map(([dateKey, assignments]) => [
-      dateKey,
-      (assignments || []).map((assignment) => ({
-        id: assignment.id,
-        taskId: assignment.taskId,
-        completed: Boolean(assignment.completed),
-        source: assignment.source === "auto" ? "auto" : assignment.source === "recurring" ? "recurring" : "manual",
-        recurrenceTaskId: assignment.recurrenceTaskId || null,
-        recurrenceKey: assignment.recurrenceKey || null
-      }))
-    ])
-  );
+const migrateLegacyTasks = (tasks = [], boardState = {}) => {
+  const assignmentMap = new Map();
 
-const filterAssignmentsForVisibleTasks = (boardState, visibleTaskIds) =>
-  Object.fromEntries(
-    Object.entries(boardState)
-      .map(([dateKey, assignments]) => [dateKey, assignments.filter((assignment) => visibleTaskIds.has(assignment.taskId))])
-      .filter(([, assignments]) => assignments.length > 0)
-  );
+  Object.entries(boardState || {}).forEach(([dateKey, assignments]) => {
+    (assignments || []).forEach((assignment) => {
+      const existing = assignmentMap.get(assignment.taskId);
+      const candidate = {
+        dateKey,
+        completed: Boolean(assignment.completed)
+      };
+
+      if (!existing || candidate.dateKey < existing.dateKey) {
+        assignmentMap.set(assignment.taskId, candidate);
+      }
+    });
+  });
+
+  return tasks.map((task, index) => {
+    const legacyAssignment = assignmentMap.get(task.id);
+    return normalizeTaskRecord(
+      {
+        ...task,
+        scheduledDate: task.scheduledDate ?? legacyAssignment?.dateKey ?? null,
+        completed: task.completed ?? legacyAssignment?.completed ?? false
+      },
+      index
+    );
+  });
+};
+
+const groupTasksByScheduledDate = (tasks) =>
+  tasks.reduce((groups, task) => {
+    if (!task.scheduledDate) return groups;
+    if (!groups[task.scheduledDate]) {
+      groups[task.scheduledDate] = [];
+    }
+    groups[task.scheduledDate].push(task);
+    return groups;
+  }, {});
 
 function App() {
   const [persistedUiSettings] = useState(() => readPersistedUiSettings());
   const [appState, setAppState] = useState({
     tasks: MOCK_TASKS.map(normalizeTaskRecord),
     tagOptions: Array.from(new Set(MOCK_TASKS.flatMap((task) => task.tags || []))).sort((a, b) => a.localeCompare(b)),
-    boardState: {} // `dateKey` -> array of { id, taskId, completed }
+    workflows: []
   });
   const [selectedTaskId, setSelectedTaskId] = useState(null);
   const [baseDate, setBaseDate] = useState(new Date());
@@ -158,15 +170,16 @@ function App() {
           if (cancelled) return;
 
           if (data && data.tasks) {
-            const normalizedBoardState = normalizeLoadedBoardState(data.boardState || {});
+            const migratedTasks = migrateLegacyTasks(data.tasks, data.boardState || {});
 
             setAppState({
-              tasks: data.tasks.map((task) => {
-                const { totalTime: _totalTime, ...rest } = task;
-                return normalizeTaskRecord(rest);
-              }),
-              tagOptions: Array.from(new Set((data.tagOptions || data.tasks.flatMap((task) => task.tags || [])))).sort((a, b) => a.localeCompare(b)),
-                boardState: normalizedBoardState
+              tasks: migratedTasks,
+              tagOptions: Array.from(new Set((data.tagOptions || migratedTasks.flatMap((task) => task.tags || [])))).sort((a, b) =>
+                a.localeCompare(b)
+              ),
+              workflows: Array.isArray(data.workflows)
+                ? data.workflows.map((workflow, index) => normalizeWorkflowRecord(workflow, index, TASK_COLORS))
+                : []
             });
           }
           setIsLoaded(true);
@@ -261,32 +274,39 @@ function App() {
     }
   }, [viewType, taskListFilterConfig, boardFilterConfig, sortConfig, isLoaded]);
 
-  const handleCreateInlineTask = useCallback((parentId = null) => {
+  useEffect(() => {
+    if (!isLoaded) return;
+
+    setAppState((prev) => {
+      const { nextState, createdCount } = materializeWorkflowTasks(prev, TASK_COLORS, new Date());
+      return createdCount > 0 || nextState !== prev ? nextState : prev;
+    });
+  }, [isLoaded, appState.workflows]);
+
+  const handleCreateInlineTask = useCallback(() => {
     const newTaskId = `task_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
 
     openInspector(newTaskId, { focusTitle: true });
 
     setAppState((prev) => {
-      const parentTask = parentId ? prev.tasks.find((task) => task.id === parentId) : null;
-      const nextColor = parentTask?.color || TASK_COLORS[prev.tasks.length % TASK_COLORS.length];
+      const nextColor = TASK_COLORS[prev.tasks.length % TASK_COLORS.length];
 
-      const newTasks = [
-        ...prev.tasks,
-        {
-          id: newTaskId,
-          title: "",
-          color: nextColor,
-          parentId,
-          isExpanded: true,
-          tags: [],
-          deadline: null,
-          description: "",
-          placementType: "manual",
-          recurrence: null
-        }
-      ].map((task) => (task.id === parentId ? { ...task, isExpanded: true } : task));
-
-      return { ...prev, tasks: newTasks };
+      return {
+        ...prev,
+        tasks: [
+          ...prev.tasks,
+          {
+            id: newTaskId,
+            title: "",
+            color: nextColor,
+            tags: [],
+            deadline: null,
+            description: "",
+            scheduledDate: null,
+            completed: false
+          }
+        ]
+      };
     });
   }, [openInspector]);
 
@@ -298,170 +318,52 @@ function App() {
   }, []);
 
   const handleUpdateTaskDetails = useCallback((taskId, updates) => {
-    setAppState((prev) => {
-      const currentTask = prev.tasks.find((task) => task.id === taskId);
-      if (!currentTask) return prev;
-
-      const nextTasks = prev.tasks.map((task) => (task.id === taskId ? normalizeTaskRecord({ ...task, ...updates }) : task));
-      const nextTask = nextTasks.find((task) => task.id === taskId);
-      const currentRecurring = isRecurringTask(currentTask);
-      const nextRecurring = isRecurringTask(nextTask);
-      const recurrenceChanged =
-        currentTask.deadline !== nextTask.deadline ||
-        currentTask.placementType !== nextTask.placementType ||
-        JSON.stringify(currentTask.recurrence || null) !== JSON.stringify(nextTask.recurrence || null);
-
-      const nextBoardState = recurrenceChanged && (currentRecurring || nextRecurring)
-        ? syncRecurringAssignmentsForTask(prev.boardState, nextTask)
-        : prev.boardState;
-
-      if (!recurrenceChanged) {
-        return { ...prev, tasks: nextTasks };
-      }
-
-      return {
-        ...prev,
-        tasks: nextTasks,
-        boardState: nextBoardState
-      };
-    });
+    setAppState((prev) => ({
+      ...prev,
+      tasks: prev.tasks.map((task) => (task.id === taskId ? normalizeTaskRecord({ ...task, ...updates }) : task))
+    }));
   }, []);
 
   const handleDeleteTask = useCallback(
     (taskId) => {
-      setAppState((prev) => {
-        const taskIdsToDelete = new Set([taskId]);
+      setAppState((prev) => ({
+        ...prev,
+        tasks: prev.tasks.filter((task) => task.id !== taskId)
+      }));
 
-        const collectDescendants = (parentId) => {
-          prev.tasks
-            .filter((task) => task.parentId === parentId)
-            .forEach((child) => {
-              taskIdsToDelete.add(child.id);
-              collectDescendants(child.id);
-            });
-        };
-
-        collectDescendants(taskId);
-
-        if (taskIdsToDelete.has(selectedTaskId)) {
-          setTimeout(() => setSelectedTaskId(null), 0);
-        }
-
-        const nextBoardState = Object.fromEntries(
-          Object.entries(prev.boardState)
-            .map(([dateKey, assignments]) => [
-              dateKey,
-              assignments.filter((assignment) => !taskIdsToDelete.has(assignment.taskId))
-            ])
-            .filter(([, assignments]) => assignments.length > 0)
-        );
-
-        return {
-          ...prev,
-          tasks: prev.tasks.filter((task) => !taskIdsToDelete.has(task.id)),
-          boardState: nextBoardState
-        };
-      });
+      if (selectedTaskId === taskId) {
+        setTimeout(() => setSelectedTaskId(null), 0);
+      }
     },
     [selectedTaskId]
   );
 
-  const handleToggleParent = useCallback((taskId) => {
+  const handleScheduleTask = useCallback((taskId, dateKey) => {
     setAppState((prev) => ({
       ...prev,
-      tasks: prev.tasks.map((task) => (task.id === taskId ? { ...task, isExpanded: !task.isExpanded } : task))
+      tasks: prev.tasks.map((task) => (task.id === taskId ? { ...task, scheduledDate: dateKey } : task))
     }));
   }, []);
 
-  const handleMoveAssignment = useCallback((sourceDateKey, targetDateKey, assignmentId) => {
-    if (sourceDateKey === targetDateKey) return;
-
-    setAppState((prev) => {
-      const sourceAssignments = prev.boardState[sourceDateKey] || [];
-      const assignmentToMove = sourceAssignments.find((assignment) => assignment.id === assignmentId);
-      if (!assignmentToMove) return prev;
-
-      if (hasTaskAssignmentOnDate(prev.boardState, targetDateKey, assignmentToMove.taskId, assignmentId)) {
-        return prev;
-      }
-
-      const nextSourceAssignments = sourceAssignments.filter((assignment) => assignment.id !== assignmentId);
-      const nextTargetAssignments = [...(prev.boardState[targetDateKey] || []), assignmentToMove];
-      const nextBoardState = { ...prev.boardState, [targetDateKey]: nextTargetAssignments };
-
-      if (nextSourceAssignments.length > 0) {
-        nextBoardState[sourceDateKey] = nextSourceAssignments;
-      } else {
-        delete nextBoardState[sourceDateKey];
-      }
-
-      return { ...prev, boardState: nextBoardState };
-    });
-  }, []);
-
-  const handleDeleteAssignment = useCallback((dateKey, assignmentId) => {
-    setAppState((prev) => {
-      const dayAssignments = prev.boardState[dateKey] || [];
-      const nextAssignments = dayAssignments.filter((assignment) => assignment.id !== assignmentId);
-      const nextBoardState = { ...prev.boardState };
-
-      if (nextAssignments.length > 0) {
-        nextBoardState[dateKey] = nextAssignments;
-      } else {
-        delete nextBoardState[dateKey];
-      }
-
-      return { ...prev, boardState: nextBoardState };
-    });
-  }, []);
-
-  const handleAddAssignmentFromSidebar = useCallback((taskId, dateKey) => {
+  const handleMoveTask = useCallback((taskId, dateKey) => {
     setAppState((prev) => ({
       ...prev,
-      boardState: hasTaskAssignmentOnDate(prev.boardState, dateKey, taskId)
-        ? prev.boardState
-        : {
-            ...prev.boardState,
-            [dateKey]: [
-              ...(prev.boardState[dateKey] || []),
-              {
-                id: `evt_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
-                taskId,
-                completed: false,
-                source: prev.tasks.find((task) => task.id === taskId)?.placementType === "recurring" ? "auto" : "manual"
-              }
-            ]
-          }
+      tasks: prev.tasks.map((task) => (task.id === taskId ? { ...task, scheduledDate: dateKey } : task))
     }));
   }, []);
 
-  const handleToggleAssignmentComplete = useCallback((dateKey, assignmentId) => {
-    setAppState((prev) => {
-      const dayAssignments = prev.boardState[dateKey] || [];
-      const targetAssignment = dayAssignments.find((assignment) => assignment.id === assignmentId);
-      if (!targetAssignment) return prev;
+  const handleUnscheduleTask = useCallback((taskId) => {
+    setAppState((prev) => ({
+      ...prev,
+      tasks: prev.tasks.map((task) => (task.id === taskId ? { ...task, scheduledDate: null } : task))
+    }));
+  }, []);
 
-      const nextDayAssignments = dayAssignments.map((assignment) =>
-        assignment.id === assignmentId ? { ...assignment, completed: !assignment.completed } : assignment
-      );
-
-      let nextBoardState = {
-        ...prev.boardState,
-        [dateKey]: nextDayAssignments
-      };
-
-      const targetTask = prev.tasks.find((task) => task.id === targetAssignment.taskId);
-      const shouldAdvance = targetTask && isRecurringTask(targetTask) && !targetAssignment.completed;
-
-      if (shouldAdvance) {
-        nextBoardState = syncRecurringAssignmentsForTask(nextBoardState, targetTask);
-      }
-
-      return {
-        ...prev,
-        boardState: nextBoardState
-      };
-    });
+  const handleToggleTaskComplete = useCallback((taskId) => {
+    setAppState((prev) => ({
+      ...prev,
+      tasks: prev.tasks.map((task) => (task.id === taskId ? { ...task, completed: !task.completed } : task))
+    }));
   }, []);
 
   const handleCreateTagOption = useCallback((tagName) => {
@@ -506,9 +408,7 @@ function App() {
         tagOptions: uniqueTagOptions,
         tasks: prev.tasks.map((task) => ({
           ...task,
-          tags: Array.from(
-            new Set((task.tags || []).map((tag) => (tag === oldTagName ? trimmedNext : tag)))
-          )
+          tags: Array.from(new Set((task.tags || []).map((tag) => (tag === oldTagName ? trimmedNext : tag))))
         }))
       };
     });
@@ -523,12 +423,51 @@ function App() {
     }));
   }, []);
 
+  const handleCreateWorkflow = useCallback((workflowDraft) => {
+    const workflowId = `workflow_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+
+    setAppState((prev) => {
+      const normalizedWorkflow = normalizeWorkflowRecord(
+        {
+          ...workflowDraft,
+          id: workflowId
+        },
+        prev.workflows.length,
+        TASK_COLORS
+      );
+
+      return {
+        ...prev,
+        workflows: [...prev.workflows, normalizedWorkflow],
+        tagOptions: Array.from(new Set([...prev.tagOptions, ...(normalizedWorkflow.template.tags || [])])).sort((a, b) =>
+          a.localeCompare(b)
+        )
+      };
+    });
+  }, []);
+
+  const handleToggleWorkflowEnabled = useCallback((workflowId) => {
+    setAppState((prev) => ({
+      ...prev,
+      workflows: prev.workflows.map((workflow) =>
+        workflow.id === workflowId ? { ...workflow, enabled: !workflow.enabled } : workflow
+      )
+    }));
+  }, []);
+
+  const handleDeleteWorkflow = useCallback((workflowId) => {
+    setAppState((prev) => ({
+      ...prev,
+      workflows: prev.workflows.filter((workflow) => workflow.id !== workflowId)
+    }));
+  }, []);
+
   const tasksWithStats = appState.tasks.map((task) => {
-    const stats = getTaskStats(task.id, appState.tasks, appState.boardState);
+    const stats = getTaskStats(task);
     return {
       ...task,
       ...stats,
-      status: getTaskStatus(task.id, appState.tasks, appState.boardState)
+      status: getTaskStatus(task)
     };
   });
 
@@ -545,22 +484,21 @@ function App() {
   }, []);
 
   const filteredTasks = filterTasks(tasksWithStats, taskListFilterConfig).sort((a, b) => {
-      const order = sortConfig.order === "asc" ? 1 : -1;
+    const order = sortConfig.order === "asc" ? 1 : -1;
 
-      if (sortConfig.key === "deadline") return (a.deadline || "").localeCompare(b.deadline || "") * order;
-      if (sortConfig.key === "scheduledCount") return (a.scheduledCount - b.scheduledCount) * order;
-      if (sortConfig.key === "title") return (a.title || "").localeCompare(b.title || "") * order;
-      if (sortConfig.key === "status") return a.status.localeCompare(b.status) * order;
-      return 0;
-    });
+    if (sortConfig.key === "deadline") return (a.deadline || "").localeCompare(b.deadline || "") * order;
+    if (sortConfig.key === "scheduledCount") return (a.scheduledCount - b.scheduledCount) * order;
+    if (sortConfig.key === "title") return (a.title || "").localeCompare(b.title || "") * order;
+    if (sortConfig.key === "status") return a.status.localeCompare(b.status) * order;
+    return 0;
+  });
 
-  const visiblePoolTasks = filteredTasks;
-
-  const boardFilteredTasks = filterTasks(tasksWithStats, boardFilterConfig);
-  const visibleTaskIds = new Set(boardFilteredTasks.map((task) => task.id));
-  const filteredBoardState = filterAssignmentsForVisibleTasks(appState.boardState, visibleTaskIds);
+  const visiblePoolTasks = filteredTasks.filter((task) => !task.scheduledDate);
+  const boardFilteredTasks = filterTasks(tasksWithStats.filter((task) => task.scheduledDate), boardFilterConfig);
+  const scheduledTasksByDate = groupTasksByScheduledDate(boardFilteredTasks);
   const availableTags = appState.tagOptions;
   const editingTaskData = editingTaskId ? appState.tasks.find((task) => task.id === editingTaskId) : null;
+
   const handleOpenTaskDetail = useCallback(
     (taskId, options = {}) => {
       openInspector(taskId, options);
@@ -574,20 +512,8 @@ function App() {
   }, []);
 
   const hoveredTask = hoveredTaskId ? tasksWithStats.find((task) => task.id === hoveredTaskId) : null;
-  const hoveredRecurringAssignmentDateKey =
-    hoveredTask && hoveredTask.placementType === "recurring"
-      ? Object.entries(appState.boardState)
-          .flatMap(([dateKey, assignments]) =>
-            assignments.some((assignment) => assignment.taskId === hoveredTask.id) ? [dateKey] : []
-          )
-          .sort()
-          .at(-1) || null
-      : null;
-  const hoveredTaskDeadlineKey =
-    hoveredTaskMeta?.deadlineDateKey ||
-    (hoveredTask?.placementType === "recurring"
-      ? getRecurringDeadlineDateKey(hoveredTask, hoveredRecurringAssignmentDateKey || hoveredTask.deadline)
-      : hoveredTask?.deadline || null);
+  const hoveredTaskDeadlineKey = hoveredTaskMeta?.deadlineDateKey || hoveredTask?.deadline || null;
+
   if (!isLoaded) {
     return <div className="flex h-screen items-center justify-center bg-[#F8F9FB] font-medium text-slate-500">Loading...</div>;
   }
@@ -598,17 +524,20 @@ function App() {
         <div className="w-[360px] min-w-[320px] shrink-0">
           <TaskPool
             tasks={visiblePoolTasks}
-            allTasks={tasksWithStats}
+            workflows={appState.workflows}
             editingTaskId={editingTaskId}
             selectedTaskId={selectedTaskId}
             hoveredTaskId={hoveredTaskId}
             onSelectTask={setSelectedTaskId}
-            onToggleParent={handleToggleParent}
             onCreateInlineTask={handleCreateInlineTask}
+            onCreateWorkflow={handleCreateWorkflow}
+            onToggleWorkflowEnabled={handleToggleWorkflowEnabled}
+            onDeleteWorkflow={handleDeleteWorkflow}
             onDeleteTask={handleDeleteTask}
             onUpdateTaskTitle={handleUpdateTaskTitle}
             onOpenDetail={handleOpenTaskDetail}
             onHoverTask={handleHoverTask}
+            onUnscheduleTask={handleUnscheduleTask}
             filterConfig={taskListFilterConfig}
             setFilterConfig={setTaskListFilterConfig}
             sortConfig={sortConfig}
@@ -650,14 +579,14 @@ function App() {
             setBaseDate={setBaseDate}
             viewType={viewType}
             setViewType={setViewType}
-            boardState={filteredBoardState}
+            scheduledTasksByDate={scheduledTasksByDate}
             tasks={boardFilteredTasks}
             hoveredTaskId={hoveredTaskId}
             hoveredTaskDeadline={hoveredTaskDeadlineKey}
-            onAddAssignmentFromSidebar={handleAddAssignmentFromSidebar}
-            onDeleteAssignment={handleDeleteAssignment}
-            onMoveAssignment={handleMoveAssignment}
-            onToggleAssignmentComplete={handleToggleAssignmentComplete}
+            onScheduleTask={handleScheduleTask}
+            onUnscheduleTask={handleUnscheduleTask}
+            onMoveTask={handleMoveTask}
+            onToggleTaskComplete={handleToggleTaskComplete}
             onHoverTask={handleHoverTask}
             onOpenDetail={handleOpenTaskDetail}
             boardFilterConfig={boardFilterConfig}

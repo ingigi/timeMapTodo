@@ -1,0 +1,707 @@
+import clsx from "clsx";
+import { createPortal } from "react-dom";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+  CalendarDays,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  Minus,
+  Plus,
+  Repeat,
+  Sparkles,
+  X
+} from "lucide-react";
+
+const COLOR_OPTIONS = ["#5B8DEF", "#4FB7A8", "#D9A441", "#8A7FD1", "#7FA36B", "#C97B63", "#5FA3B7", "#C27A92"];
+
+const WEEKDAY_OPTIONS = [
+  { value: 0, label: "日曜" },
+  { value: 1, label: "月曜" },
+  { value: 2, label: "火曜" },
+  { value: 3, label: "水曜" },
+  { value: 4, label: "木曜" },
+  { value: 5, label: "金曜" },
+  { value: 6, label: "土曜" }
+];
+
+const FREQUENCY_OPTIONS = [
+  { value: "daily", label: "毎日" },
+  { value: "weekly", label: "毎週" },
+  { value: "monthly", label: "毎月" }
+];
+
+const DUE_OFFSET_PRESETS = [0, 1, 3, 7, 14];
+const DAY_LABELS = ["月", "火", "水", "木", "金", "土", "日"];
+
+const formatToday = () => {
+  const date = new Date();
+  const year = date.getFullYear();
+  const month = `${date.getMonth() + 1}`.padStart(2, "0");
+  const day = `${date.getDate()}`.padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
+const parseDateValue = (value) => {
+  if (!value) return null;
+  const [year, month, day] = value.split("-").map(Number);
+  if (!year || !month || !day) return null;
+  return new Date(year, month - 1, day);
+};
+
+const formatDateValue = (date) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
+const formatDateLabel = (value) => {
+  if (!value) return "";
+  const [year, month, day] = value.split("-");
+  if (!year || !month || !day) return value;
+  return `${year}/${month}/${day}`;
+};
+
+const startOfMonth = (date) => new Date(date.getFullYear(), date.getMonth(), 1);
+
+const addMonths = (date, months) => {
+  const next = new Date(date);
+  next.setMonth(next.getMonth() + months);
+  return next;
+};
+
+const isSameDay = (left, right) =>
+  left &&
+  right &&
+  left.getFullYear() === right.getFullYear() &&
+  left.getMonth() === right.getMonth() &&
+  left.getDate() === right.getDate();
+
+const splitTags = (value) =>
+  value
+    .split(",")
+    .map((tag) => tag.trim())
+    .filter(Boolean);
+
+function PickerField({ label, children }) {
+  return (
+    <label className="block">
+      <div className="mb-1.5 text-xs font-medium text-slate-600">{label}</div>
+      {children}
+    </label>
+  );
+}
+
+export default function TaskWorkflowModal({ availableTags = [], onSave, onClose }) {
+  const [workflowName, setWorkflowName] = useState("");
+  const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
+  const [tagsInput, setTagsInput] = useState("");
+  const [color, setColor] = useState(COLOR_OPTIONS[0]);
+  const [frequency, setFrequency] = useState("weekly");
+  const [startDate, setStartDate] = useState(formatToday);
+  const [weekdays, setWeekdays] = useState([1]);
+  const [dayOfMonth, setDayOfMonth] = useState(1);
+  const [dueOffsetDays, setDueOffsetDays] = useState(0);
+  const [isFrequencyMenuOpen, setIsFrequencyMenuOpen] = useState(false);
+  const [isDatePickerOpen, setIsDatePickerOpen] = useState(false);
+  const [datePickerMonth, setDatePickerMonth] = useState(() => startOfMonth(parseDateValue(formatToday()) || new Date()));
+  const [frequencyMenuDirection, setFrequencyMenuDirection] = useState("down");
+  const [datePickerPosition, setDatePickerPosition] = useState(null);
+  const frequencyButtonRef = useRef(null);
+  const frequencyMenuRef = useRef(null);
+  const startDateButtonRef = useRef(null);
+  const startDatePickerRef = useRef(null);
+
+  const currentTags = useMemo(() => splitTags(tagsInput), [tagsInput]);
+  const suggestedTags = useMemo(
+    () => availableTags.filter((tag) => !currentTags.includes(tag)).slice(0, 6),
+    [availableTags, currentTags]
+  );
+
+  const selectedDate = useMemo(() => parseDateValue(startDate), [startDate]);
+  const formattedStartDate = useMemo(() => formatDateLabel(startDate), [startDate]);
+
+  const calendarDays = useMemo(() => {
+    const monthStart = startOfMonth(datePickerMonth);
+    const startWeekday = (monthStart.getDay() + 6) % 7;
+    const gridStart = new Date(monthStart);
+    gridStart.setDate(gridStart.getDate() - startWeekday);
+
+    return Array.from({ length: 42 }, (_, index) => {
+      const current = new Date(gridStart);
+      current.setDate(gridStart.getDate() + index);
+      return {
+        date: current,
+        dateValue: formatDateValue(current),
+        inMonth: current.getMonth() === datePickerMonth.getMonth(),
+        isToday: isSameDay(current, new Date()),
+        isSelected: isSameDay(current, selectedDate)
+      };
+    });
+  }, [datePickerMonth, selectedDate]);
+
+  const toggleWeekday = (value) => {
+    setWeekdays((prev) => {
+      if (prev.includes(value)) {
+        if (prev.length === 1) return prev;
+        return prev.filter((day) => day !== value);
+      }
+      return [...prev, value].sort((a, b) => a - b);
+    });
+  };
+
+  const canSave = title.trim().length > 0 && startDate && (frequency !== "weekly" || weekdays.length > 0);
+
+  const previewLabel =
+    frequency === "daily"
+      ? "毎日"
+      : frequency === "weekly"
+        ? `毎週${WEEKDAY_OPTIONS.filter((option) => weekdays.includes(option.value))
+            .map((option) => option.label)
+            .join("・")}`
+        : `毎月${dayOfMonth}日`;
+
+  useEffect(() => {
+    const handleEsc = (event) => {
+      if (event.key === "Escape") {
+        if (isDatePickerOpen) {
+          setIsDatePickerOpen(false);
+          return;
+        }
+        if (isFrequencyMenuOpen) {
+          setIsFrequencyMenuOpen(false);
+          return;
+        }
+        onClose();
+      }
+    };
+
+    window.addEventListener("keydown", handleEsc);
+    return () => window.removeEventListener("keydown", handleEsc);
+  }, [isDatePickerOpen, isFrequencyMenuOpen, onClose]);
+
+  useEffect(() => {
+    const handlePointerDown = (event) => {
+      const target = event.target;
+
+      if (
+        isFrequencyMenuOpen &&
+        frequencyMenuRef.current &&
+        !frequencyMenuRef.current.contains(target) &&
+        frequencyButtonRef.current &&
+        !frequencyButtonRef.current.contains(target)
+      ) {
+        setIsFrequencyMenuOpen(false);
+      }
+
+      if (
+        isDatePickerOpen &&
+        startDatePickerRef.current &&
+        !startDatePickerRef.current.contains(target) &&
+        startDateButtonRef.current &&
+        !startDateButtonRef.current.contains(target)
+      ) {
+        setIsDatePickerOpen(false);
+      }
+    };
+
+    document.addEventListener("pointerdown", handlePointerDown, true);
+    return () => document.removeEventListener("pointerdown", handlePointerDown, true);
+  }, [isDatePickerOpen, isFrequencyMenuOpen]);
+
+  useLayoutEffect(() => {
+    if (!isFrequencyMenuOpen || !frequencyButtonRef.current) return;
+
+    const frame = requestAnimationFrame(() => {
+      if (!frequencyButtonRef.current) return;
+      const rect = frequencyButtonRef.current.getBoundingClientRect();
+      const spaceBelow = window.innerHeight - rect.bottom;
+      const spaceAbove = rect.top;
+      setFrequencyMenuDirection(spaceBelow < 240 && spaceAbove > spaceBelow ? "up" : "down");
+    });
+
+    return () => cancelAnimationFrame(frame);
+  }, [isFrequencyMenuOpen]);
+
+  useLayoutEffect(() => {
+    if (!isDatePickerOpen || !startDateButtonRef.current) return;
+
+    const rect = startDateButtonRef.current.getBoundingClientRect();
+    const pickerWidth = 332;
+    const pickerHeight = 412;
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const spaceAbove = rect.top;
+    const openUp = spaceBelow < pickerHeight && spaceAbove > spaceBelow;
+    const top = openUp
+      ? Math.max(12, rect.top - 16 - pickerHeight)
+      : Math.min(window.innerHeight - pickerHeight - 12, rect.bottom + 12);
+    const left = Math.min(Math.max(12, rect.left), window.innerWidth - pickerWidth - 12);
+
+    setDatePickerPosition({
+      top,
+      left,
+      width: Math.min(pickerWidth, window.innerWidth - 24)
+    });
+  }, [isDatePickerOpen, datePickerMonth, startDate]);
+
+  useEffect(() => {
+    if (!isDatePickerOpen) return;
+
+    const handleReposition = () => {
+      if (!startDateButtonRef.current) return;
+      const rect = startDateButtonRef.current.getBoundingClientRect();
+      const pickerWidth = 332;
+      const pickerHeight = 412;
+      const spaceBelow = window.innerHeight - rect.bottom;
+      const spaceAbove = rect.top;
+      const openUp = spaceBelow < pickerHeight && spaceAbove > spaceBelow;
+      const top = openUp
+        ? Math.max(12, rect.top - 16 - pickerHeight)
+        : Math.min(window.innerHeight - pickerHeight - 12, rect.bottom + 12);
+      const left = Math.min(Math.max(12, rect.left), window.innerWidth - pickerWidth - 12);
+
+      setDatePickerPosition({
+        top,
+        left,
+        width: Math.min(pickerWidth, window.innerWidth - 24)
+      });
+    };
+
+    window.addEventListener("resize", handleReposition);
+    window.addEventListener("scroll", handleReposition, true);
+    return () => {
+      window.removeEventListener("resize", handleReposition);
+      window.removeEventListener("scroll", handleReposition, true);
+    };
+  }, [isDatePickerOpen]);
+
+  const datePicker =
+    isDatePickerOpen && datePickerPosition
+      ? createPortal(
+          <div
+            ref={startDatePickerRef}
+            className="fixed z-50 rounded-[24px] border border-slate-200 bg-white shadow-[0_24px_70px_rgba(15,23,42,0.18)]"
+            style={{
+              top: `${datePickerPosition.top}px`,
+              left: `${datePickerPosition.left}px`,
+              width: `${datePickerPosition.width}px`
+            }}
+          >
+            <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
+              <button
+                type="button"
+                className="rounded-full p-1 text-slate-400 transition-colors hover:bg-slate-50 hover:text-slate-700"
+                onClick={() => setDatePickerMonth((prev) => addMonths(prev, -1))}
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+
+              <div className="text-sm font-semibold text-slate-900">
+                {datePickerMonth.getFullYear()}/{datePickerMonth.getMonth() + 1}
+              </div>
+
+              <button
+                type="button"
+                className="rounded-full p-1 text-slate-400 transition-colors hover:bg-slate-50 hover:text-slate-700"
+                onClick={() => setDatePickerMonth((prev) => addMonths(prev, 1))}
+              >
+                <ChevronRight className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="px-4 py-3">
+              <div className="mb-3 grid grid-cols-7 gap-1 text-center text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">
+                {DAY_LABELS.map((label) => (
+                  <div key={label}>{label}</div>
+                ))}
+              </div>
+
+              <div className="grid grid-cols-7 gap-1">
+                {calendarDays.map((day) => (
+                  <button
+                    key={day.dateValue}
+                    type="button"
+                    onClick={() => {
+                      setStartDate(day.dateValue);
+                      setIsDatePickerOpen(false);
+                    }}
+                    className={clsx(
+                      "flex h-10 items-center justify-center rounded-xl text-sm transition-colors",
+                      day.inMonth ? "text-slate-800 hover:bg-slate-50" : "text-slate-300 hover:bg-slate-50/80",
+                      day.isToday && "border border-slate-300",
+                      day.isSelected && "bg-slate-900 text-white hover:bg-slate-900"
+                    )}
+                  >
+                    {day.date.getDate()}
+                  </button>
+                ))}
+              </div>
+
+              <div className="mt-3 flex items-center justify-end gap-3 border-t border-slate-100 pt-3">
+                <button
+                  type="button"
+                  className="text-sm font-medium text-slate-500 transition-colors hover:text-slate-800"
+                  onClick={() => {
+                    const today = formatDateValue(new Date());
+                    setStartDate(today);
+                    setDatePickerMonth(startOfMonth(new Date()));
+                    setIsDatePickerOpen(false);
+                  }}
+                >
+                  今日
+                </button>
+              </div>
+            </div>
+          </div>,
+          document.body
+        )
+      : null;
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/35 p-4 backdrop-blur-sm"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) {
+          onClose();
+        }
+      }}
+    >
+      <div
+        className="relative flex max-h-[calc(100vh-32px)] w-full max-w-2xl flex-col overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-2xl"
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <button
+          type="button"
+          onClick={onClose}
+          className="absolute right-5 top-5 rounded-full p-2 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700"
+        >
+          <X className="h-5 w-5" />
+        </button>
+
+        <div className="shrink-0 border-b border-slate-100 px-7 py-6">
+          <div className="mb-2 inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+            <Repeat className="h-3.5 w-3.5" />
+            Workflow
+          </div>
+          <h2 className="text-2xl font-semibold text-slate-900">未配置タスクを自動で追加</h2>
+        </div>
+
+        <div className="min-h-0 flex-1 overflow-y-auto px-7 py-6">
+          <div className="grid gap-6 md:grid-cols-[1.2fr_0.8fr]">
+            <div className="space-y-5">
+              <section className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
+                <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-800">
+                  <Sparkles className="h-4 w-4 text-slate-500" />
+                  追加するタスク
+                </div>
+
+                <div className="space-y-4">
+                  <PickerField label="ワークフロー名">
+                    <input
+                      value={workflowName}
+                      onChange={(event) => setWorkflowName(event.target.value)}
+                      placeholder="例: 毎週のふりかえり追加"
+                      className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none transition focus:border-slate-400"
+                    />
+                  </PickerField>
+
+                  <PickerField label="タスク名">
+                    <input
+                      autoFocus
+                      value={title}
+                      onChange={(event) => setTitle(event.target.value)}
+                      placeholder="例: 週次レビューをまとめる"
+                      className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none transition focus:border-slate-400"
+                    />
+                  </PickerField>
+
+                  <PickerField label="説明">
+                    <textarea
+                      value={description}
+                      onChange={(event) => setDescription(event.target.value)}
+                      rows={4}
+                      placeholder="追加されたときの初期メモ"
+                      className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none transition focus:border-slate-400"
+                    />
+                  </PickerField>
+
+                  <PickerField label="タグ">
+                    <input
+                      value={tagsInput}
+                      onChange={(event) => setTagsInput(event.target.value)}
+                      placeholder="カンマ区切りで入力"
+                      className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none transition focus:border-slate-400"
+                    />
+                  </PickerField>
+
+                  {suggestedTags.length > 0 ? (
+                    <div className="flex flex-wrap gap-2">
+                      {suggestedTags.map((tag) => (
+                        <button
+                          key={tag}
+                          type="button"
+                          onClick={() => setTagsInput((prev) => (prev.trim() ? `${prev}, ${tag}` : tag))}
+                          className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-slate-600 transition hover:border-slate-300 hover:text-slate-900"
+                        >
+                          {tag}
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
+
+                  <div>
+                    <div className="mb-1.5 text-xs font-medium text-slate-600">カードカラー</div>
+                    <div className="flex flex-wrap gap-2">
+                      {COLOR_OPTIONS.map((swatch) => (
+                        <button
+                          key={swatch}
+                          type="button"
+                          onClick={() => setColor(swatch)}
+                          className={`h-8 w-8 rounded-full border-2 transition-transform hover:scale-105 ${
+                            color === swatch ? "border-slate-900" : "border-white"
+                          }`}
+                          style={{ backgroundColor: swatch }}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </section>
+            </div>
+
+            <div className="space-y-5">
+              <section className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
+                <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-800">
+                  <CalendarDays className="h-4 w-4 text-slate-500" />
+                  追加タイミング
+                </div>
+
+                <div className="space-y-4">
+                  <PickerField label="頻度">
+                    <div className="relative">
+                      <button
+                        ref={frequencyButtonRef}
+                        type="button"
+                        onClick={() => setIsFrequencyMenuOpen((prev) => !prev)}
+                        className="flex w-full items-center justify-between rounded-[20px] border border-slate-200 bg-slate-50/70 px-4 py-3 text-left shadow-[0_1px_2px_rgba(15,23,42,0.04)] transition-colors hover:border-slate-300 hover:bg-white"
+                      >
+                        <span className="text-sm font-semibold text-slate-900">
+                          {FREQUENCY_OPTIONS.find((option) => option.value === frequency)?.label}
+                        </span>
+                        <ChevronDown className={clsx("h-4 w-4 text-slate-400 transition-transform", isFrequencyMenuOpen && "rotate-180")} />
+                      </button>
+
+                      {isFrequencyMenuOpen ? (
+                        <div
+                          ref={frequencyMenuRef}
+                          className={clsx(
+                            "absolute left-0 right-0 z-20 rounded-2xl border border-slate-200 bg-white p-2 shadow-[0_18px_40px_rgba(15,23,42,0.12)]",
+                            frequencyMenuDirection === "up" ? "bottom-[calc(100%+8px)]" : "top-[calc(100%+8px)]"
+                          )}
+                        >
+                          {FREQUENCY_OPTIONS.map((option) => (
+                            <button
+                              key={option.value}
+                              type="button"
+                              onClick={() => {
+                                setFrequency(option.value);
+                                setIsFrequencyMenuOpen(false);
+                              }}
+                              className={clsx(
+                                "mb-1 w-full rounded-xl px-3 py-2 text-left text-sm transition-colors last:mb-0",
+                                frequency === option.value ? "bg-slate-100 font-medium text-slate-900" : "text-slate-600 hover:bg-slate-50"
+                              )}
+                            >
+                              {option.label}
+                            </button>
+                          ))}
+                        </div>
+                      ) : null}
+                    </div>
+                  </PickerField>
+
+                  <PickerField label="開始日">
+                    <button
+                      ref={startDateButtonRef}
+                      type="button"
+                      onClick={() => {
+                        setDatePickerMonth(startOfMonth(parseDateValue(startDate) || new Date()));
+                        setIsDatePickerOpen((prev) => !prev);
+                      }}
+                      className="flex w-full items-center gap-3 rounded-[20px] border border-slate-200 bg-slate-50/70 px-4 py-3 text-left shadow-[0_1px_2px_rgba(15,23,42,0.04)] transition-colors hover:border-slate-300 hover:bg-white"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <div className="text-sm font-semibold text-slate-900">{formattedStartDate || "日付を選択"}</div>
+                        <div className="mt-0.5 text-[11px] font-medium text-slate-400">開始日</div>
+                      </div>
+                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-400">
+                        <CalendarDays className="h-4 w-4" />
+                      </div>
+                    </button>
+                  </PickerField>
+
+                  {frequency === "weekly" ? (
+                    <div>
+                      <div className="mb-1.5 text-xs font-medium text-slate-600">曜日</div>
+                      <div className="flex flex-wrap gap-2">
+                        {WEEKDAY_OPTIONS.map((option) => {
+                          const selected = weekdays.includes(option.value);
+                          return (
+                            <button
+                              key={option.value}
+                              type="button"
+                              onClick={() => toggleWeekday(option.value)}
+                              className={`rounded-full border px-3 py-2 text-sm font-medium transition ${
+                                selected
+                                  ? "border-slate-900 bg-slate-900 text-white"
+                                  : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900"
+                              }`}
+                            >
+                              {option.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {frequency === "monthly" ? (
+                    <div>
+                      <div className="mb-1.5 text-xs font-medium text-slate-600">日付</div>
+                      <div className="rounded-[20px] border border-slate-200 bg-slate-50/70 p-3 shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
+                        <div className="mb-3 text-sm font-semibold text-slate-900">毎月 {dayOfMonth} 日</div>
+                        <div className="grid grid-cols-7 gap-2">
+                          {Array.from({ length: 31 }, (_, index) => {
+                            const day = index + 1;
+                            const selected = dayOfMonth === day;
+
+                            return (
+                              <button
+                                key={day}
+                                type="button"
+                                onClick={() => setDayOfMonth(day)}
+                                className={clsx(
+                                  "rounded-xl px-0 py-2 text-sm font-medium transition-colors",
+                                  selected
+                                    ? "bg-slate-900 text-white shadow-sm"
+                                    : "bg-white text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                                )}
+                              >
+                                {day}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </div>
+                  ) : null}
+
+                  <PickerField label="期限">
+                    <div className="rounded-[20px] border border-slate-200 bg-slate-50/70 p-3 shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
+                      <div className="mb-3 text-sm font-semibold text-slate-900">作成日から {dueOffsetDays} 日後</div>
+
+                      <div className="mb-3 flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setDueOffsetDays((prev) => Math.max(0, prev - 1))}
+                          className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 transition hover:border-slate-300 hover:text-slate-900"
+                          title="1日減らす"
+                        >
+                          <Minus className="h-4 w-4" />
+                        </button>
+
+                        <div className="flex-1 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-center text-sm font-semibold text-slate-900">
+                          {dueOffsetDays} 日後
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => setDueOffsetDays((prev) => Math.min(365, prev + 1))}
+                          className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 transition hover:border-slate-300 hover:text-slate-900"
+                          title="1日増やす"
+                        >
+                          <Plus className="h-4 w-4" />
+                        </button>
+                      </div>
+
+                      <div className="flex flex-wrap gap-2">
+                        {DUE_OFFSET_PRESETS.map((preset) => {
+                          const selected = dueOffsetDays === preset;
+                          return (
+                            <button
+                              key={preset}
+                              type="button"
+                              onClick={() => setDueOffsetDays(preset)}
+                              className={clsx(
+                                "rounded-full px-3 py-2 text-sm font-medium transition-colors",
+                                selected
+                                  ? "bg-slate-900 text-white shadow-sm"
+                                  : "bg-white text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                              )}
+                            >
+                              {preset === 0 ? "当日" : `${preset}日後`}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </PickerField>
+                </div>
+              </section>
+
+              <section className="rounded-2xl border border-dashed border-slate-200 bg-white p-4">
+                <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Preview</div>
+                <div className="mt-2 text-sm font-semibold text-slate-900">{workflowName.trim() || title.trim() || "新しいワークフロー"}</div>
+                <div className="mt-1 text-sm text-slate-500">{previewLabel} に未配置タスクを追加</div>
+              </section>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex shrink-0 items-center justify-between border-t border-slate-100 px-7 py-5">
+          <div className="text-xs text-slate-500">あとから停止や削除もできます。</div>
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-xl px-4 py-2.5 text-sm font-medium text-slate-600 transition hover:bg-slate-100"
+            >
+              キャンセル
+            </button>
+            <button
+              type="button"
+              disabled={!canSave}
+              onClick={() =>
+                onSave({
+                  name: workflowName.trim() || title.trim(),
+                  enabled: true,
+                  schedule: {
+                    frequency,
+                    startDate,
+                    weekdays,
+                    weekday: weekdays[0] ?? 1,
+                    dayOfMonth
+                  },
+                  template: {
+                    title: title.trim(),
+                    description: description.trim(),
+                    tags: splitTags(tagsInput),
+                    color,
+                    dueOffsetDays
+                  }
+                })
+              }
+              className="rounded-xl bg-slate-900 px-5 py-2.5 text-sm font-medium text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              ワークフローを作成
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {datePicker}
+    </div>
+  );
+}

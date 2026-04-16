@@ -9,6 +9,7 @@
     "dev:electron": "concurrently \"npm run dev\" \"wait-on tcp:5173 && cross-env NODE_ENV=development electron .\"",
     "build": "vite build",
     "build:electron": "npm run build && electron-builder build --win --x64",
+    "build:electron:mac": "npm run build && electron-builder build --mac --x64 --arm64 --config.directories.output=release-macOS",
     "lint": "eslint .",
     "preview": "vite preview"
   },
@@ -23,6 +24,9 @@
       "electron/**/*",
       "package.json"
     ],
+    "mac": {
+      "target": "dmg"
+    },
     "win": {
       "target": "nsis"
     }

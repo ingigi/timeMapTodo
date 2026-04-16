@@ -4,7 +4,6 @@ import { Trash2 } from "lucide-react";
 import { attachDragPreview } from "../../utils/dragPreview";
 import { getTaskPalette } from "../../utils/taskColors";
 import { clearCurrentDrag, setCurrentDrag } from "../../utils/dragState";
-import { getRecurrenceSummary } from "../../utils/recurrence";
 
 const STATUS_LABELS = {
   NotStarted: "未着手",
@@ -24,17 +23,16 @@ export default function TaskListItem({
   isRelated,
   suppressInlineTitleAutoEdit,
   onDelete,
-  onUpdateTitle,
+  onUpdateTaskTitle,
   onOpenDetail,
   onHoverTask
 }) {
-  const { id, title, color, status = "NotStarted", deadline } = task;
+  const { id, title, color, status = "NotStarted", deadline, sourceWorkflowId } = task;
   const titleInputRef = useRef(null);
   const dragCleanupRef = useRef(null);
   const [isEditingTitle, setIsEditingTitle] = useState(() => !title?.trim() && !suppressInlineTitleAutoEdit);
   const palette = getTaskPalette(color);
   const isCompleted = status === "Completed";
-  const placementLabel = task.placementType === "recurring" ? getRecurrenceSummary(task) : "指定配置";
 
   useEffect(() => {
     if (isEditingTitle && titleInputRef.current) {
@@ -57,7 +55,7 @@ export default function TaskListItem({
         !isRelated && !isActive && "border-slate-200 hover:border-slate-300 hover:shadow-sm",
         isCompleted && "opacity-75"
       )}
-      onMouseEnter={() => onHoverTask(id)}
+      onMouseEnter={() => onHoverTask(id, { deadlineDateKey: deadline || null })}
       onMouseLeave={() => onHoverTask(null)}
       onClick={() => onOpenDetail(id)}
       style={{
@@ -82,24 +80,24 @@ export default function TaskListItem({
         }
 
         const payload = {
-          dragType: "new",
+          dragType: "task",
           taskId: id,
-          dragTitle: title || "タスク",
+          dragTitle: title || "Task",
           dragColor: color || "#94a3b8",
           dragDeadline: deadline || ""
         };
-        event.dataTransfer.effectAllowed = "copy";
+        event.dataTransfer.effectAllowed = "move";
         event.dataTransfer.setData("taskId", id);
         event.dataTransfer.setData("text/plain", JSON.stringify(payload));
         event.dataTransfer.setData("application/x-task-id", id);
-        event.dataTransfer.setData("dragType", "new");
-        event.dataTransfer.setData("application/x-drag-type", "new");
-        event.dataTransfer.setData("dragTitle", title || "タスク");
+        event.dataTransfer.setData("dragType", "task");
+        event.dataTransfer.setData("application/x-drag-type", "task");
+        event.dataTransfer.setData("dragTitle", title || "Task");
         event.dataTransfer.setData("dragColor", color || "#94a3b8");
         event.dataTransfer.setData("dragDeadline", deadline || "");
         setCurrentDrag(payload);
         dragCleanupRef.current = attachDragPreview(event, {
-          title: title || "タスク",
+          title: title || "Task",
           color: color || "#94a3b8",
           completed: isCompleted
         });
@@ -115,15 +113,16 @@ export default function TaskListItem({
       <div className="min-w-0 flex-1">
         <div className="mb-1 flex flex-wrap items-center gap-2">
           <span className={clsx("rounded-full px-2 py-0.5 text-[11px] font-medium", STATUS_STYLES[status])}>{STATUS_LABELS[status]}</span>
-          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600">{placementLabel}</span>
-          {task.placementType === "recurring" ? null : deadline ? <span className="text-[12px] text-slate-400">期限 {deadline}</span> : null}
+          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600">未配置</span>
+          {sourceWorkflowId ? <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-500">自動追加</span> : null}
+          {deadline ? <span className="text-[12px] text-slate-400">期限 {deadline}</span> : null}
         </div>
 
         {isEditingTitle ? (
           <input
             ref={titleInputRef}
             value={title}
-            onChange={(event) => onUpdateTitle(id, event.target.value)}
+            onChange={(event) => onUpdateTaskTitle(id, event.target.value)}
             onClick={(event) => event.stopPropagation()}
             onMouseDown={(event) => event.stopPropagation()}
             onBlur={() => setIsEditingTitle(false)}
@@ -136,8 +135,11 @@ export default function TaskListItem({
             className="w-full select-text border-none bg-transparent text-sm font-semibold text-slate-900 outline-none placeholder:text-slate-300"
           />
         ) : (
-          <div className={clsx("truncate text-sm font-semibold text-slate-900", isCompleted && "line-through")} style={isCompleted ? { color: palette.mutedText } : undefined}>
-            {title || "未設定"}
+          <div
+            className={clsx("truncate text-sm font-semibold text-slate-900", isCompleted && "line-through")}
+            style={isCompleted ? { color: palette.mutedText } : undefined}
+          >
+            {title || "無題タスク"}
           </div>
         )}
       </div>

@@ -6,14 +6,14 @@ const MONTH_WEEKDAY_LABELS = ["月", "火", "水", "木", "金", "土", "日"];
 
 function MonthSection({
   monthDate,
-  boardState,
+  scheduledTasksByDate,
   tasks,
   hoveredTaskId,
   hoveredTaskDeadline,
-  onAddAssignmentFromSidebar,
-  onDeleteAssignment,
-  onMoveAssignment,
-  onToggleAssignmentComplete,
+  onScheduleTask,
+  onUnscheduleTask,
+  onMoveTask,
+  onToggleTaskComplete,
   onHoverTask,
   onOpenDetail
 }) {
@@ -36,20 +36,20 @@ function MonthSection({
 
         {weeks.map((week, weekIndex) =>
           week.map((dateObj, dayIndex) => {
-            const assignments = boardState[dateObj.dateKey] || [];
+            const dayTasks = scheduledTasksByDate[dateObj.dateKey] || [];
 
             return (
               <MonthlyDay
                 key={`${dateObj.dateKey}-${weekIndex}-${dayIndex}`}
                 dateObj={dateObj}
-                assignments={assignments}
+                dayTasks={dayTasks}
                 tasks={tasks}
                 hoveredTaskId={hoveredTaskId}
                 hoveredTaskDeadline={hoveredTaskDeadline}
-                onAddAssignmentFromSidebar={onAddAssignmentFromSidebar}
-                onDeleteAssignment={onDeleteAssignment}
-                onMoveAssignment={onMoveAssignment}
-                onToggleAssignmentComplete={onToggleAssignmentComplete}
+                onScheduleTask={onScheduleTask}
+                onUnscheduleTask={onUnscheduleTask}
+                onMoveTask={onMoveTask}
+                onToggleTaskComplete={onToggleTaskComplete}
                 onHoverTask={onHoverTask}
                 onOpenDetail={onOpenDetail}
               />

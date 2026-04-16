@@ -1,4 +1,4 @@
-﻿import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, Check, Filter, Pencil, Plus, X } from "lucide-react";
 import WeeklyBoard from "../WeeklyBoard/WeeklyBoard";
 import MonthlyBoard from "../MonthlyBoard/MonthlyBoard";
@@ -15,7 +15,7 @@ export default function CalendarArea({
   viewType,
   setBaseDate,
   setViewType,
-  boardState,
+  scheduledTasksByDate,
   tasks,
   hoveredTaskId,
   hoveredTaskDeadline,
@@ -25,10 +25,10 @@ export default function CalendarArea({
   onCreateTag,
   onDeleteTag,
   onRenameTag,
-  onAddAssignmentFromSidebar,
-  onDeleteAssignment,
-  onMoveAssignment,
-  onToggleAssignmentComplete,
+  onScheduleTask,
+  onUnscheduleTask,
+  onMoveTask,
+  onToggleTaskComplete,
   onHoverTask,
   onOpenDetail
 }) {
@@ -458,54 +458,43 @@ export default function CalendarArea({
             )}
           </div>
 
-          <div className="shrink-0 text-sm font-semibold text-slate-400">
-            {visibleMonthLabel}
-          </div>
+          <div className="shrink-0 text-sm font-semibold text-slate-400">{visibleMonthLabel}</div>
         </div>
       </div>
 
       <div className="relative flex-1 overflow-hidden">
         {viewType === "week" ? (
-        <WeeklyBoard
-          baseDate={baseDate}
-          boardState={boardState}
-          tasks={tasks}
-          hoveredTaskId={hoveredTaskId}
-          hoveredTaskDeadline={hoveredTaskDeadline || hoveredTask?.deadline || null}
-          onVisibleMonthChange={setVisibleMonthLabel}
-          boardFilterConfig={boardFilterConfig}
-          setBoardFilterConfig={setBoardFilterConfig}
-          availableTags={availableTags}
-          onAddAssignmentFromSidebar={onAddAssignmentFromSidebar}
-          onDeleteAssignment={onDeleteAssignment}
-          onMoveAssignment={onMoveAssignment}
-          onToggleAssignmentComplete={onToggleAssignmentComplete}
-          onHoverTask={onHoverTask}
-          onOpenDetail={onOpenDetail}
+          <WeeklyBoard
+            baseDate={baseDate}
+            scheduledTasksByDate={scheduledTasksByDate}
+            tasks={tasks}
+            hoveredTaskId={hoveredTaskId}
+            hoveredTaskDeadline={hoveredTaskDeadline || hoveredTask?.deadline || null}
+            onVisibleMonthChange={setVisibleMonthLabel}
+            onScheduleTask={onScheduleTask}
+            onUnscheduleTask={onUnscheduleTask}
+            onMoveTask={onMoveTask}
+            onToggleTaskComplete={onToggleTaskComplete}
+            onHoverTask={onHoverTask}
+            onOpenDetail={onOpenDetail}
           />
         ) : (
-        <MonthlyBoard
-          baseDate={baseDate}
-          boardState={boardState}
-          tasks={tasks}
-          hoveredTaskId={hoveredTaskId}
-          hoveredTaskDeadline={hoveredTaskDeadline || hoveredTask?.deadline || null}
-          onVisibleMonthChange={setVisibleMonthLabel}
-          boardFilterConfig={boardFilterConfig}
-          setBoardFilterConfig={setBoardFilterConfig}
-          availableTags={availableTags}
-          onAddAssignmentFromSidebar={onAddAssignmentFromSidebar}
-          onDeleteAssignment={onDeleteAssignment}
-          onMoveAssignment={onMoveAssignment}
-          onToggleAssignmentComplete={onToggleAssignmentComplete}
-          onHoverTask={onHoverTask}
-          onOpenDetail={onOpenDetail}
+          <MonthlyBoard
+            baseDate={baseDate}
+            scheduledTasksByDate={scheduledTasksByDate}
+            tasks={tasks}
+            hoveredTaskId={hoveredTaskId}
+            hoveredTaskDeadline={hoveredTaskDeadline || hoveredTask?.deadline || null}
+            onVisibleMonthChange={setVisibleMonthLabel}
+            onScheduleTask={onScheduleTask}
+            onUnscheduleTask={onUnscheduleTask}
+            onMoveTask={onMoveTask}
+            onToggleTaskComplete={onToggleTaskComplete}
+            onHoverTask={onHoverTask}
+            onOpenDetail={onOpenDetail}
           />
         )}
       </div>
     </div>
   );
 }
-
-
-
