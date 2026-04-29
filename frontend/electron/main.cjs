@@ -1,19 +1,79 @@
-const { app, BrowserWindow, ipcMain } = require("electron");
+const { app, BrowserWindow, ipcMain, shell } = require("electron");
 const path = require("path");
 const fs = require("fs");
+const http = require("http");
+const crypto = require("crypto");
 
 const isDev = process.env.NODE_ENV === "development";
 
 let mainWindow;
+let staticServer;
 
-function createWindow() {
+const base64UrlEncode = (buffer) =>
+  buffer.toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+
+const createCodeVerifier = () => base64UrlEncode(crypto.randomBytes(64));
+
+const createCodeChallenge = (verifier) => base64UrlEncode(crypto.createHash("sha256").update(verifier).digest());
+
+const getContentType = (filePath) => {
+  const extension = path.extname(filePath).toLowerCase();
+  if (extension === ".html") return "text/html; charset=utf-8";
+  if (extension === ".js") return "text/javascript; charset=utf-8";
+  if (extension === ".css") return "text/css; charset=utf-8";
+  if (extension === ".svg") return "image/svg+xml";
+  if (extension === ".json") return "application/json; charset=utf-8";
+  return "application/octet-stream";
+};
+
+function createStaticServer(rootDir) {
+  const server = http.createServer((request, response) => {
+    const requestUrl = new URL(request.url, "http://127.0.0.1");
+    const requestedPath = decodeURIComponent(requestUrl.pathname);
+    const relativePath = requestedPath === "/" ? "index.html" : requestedPath.slice(1);
+    const filePath = path.resolve(rootDir, relativePath);
+    const resolvedRoot = path.resolve(rootDir);
+
+    if (!filePath.startsWith(resolvedRoot)) {
+      response.writeHead(403);
+      response.end("Forbidden");
+      return;
+    }
+
+    fs.promises
+      .readFile(filePath)
+      .catch(() => fs.promises.readFile(path.join(rootDir, "index.html")))
+      .then((content) => {
+        response.writeHead(200, {
+          "Content-Type": getContentType(filePath),
+          "Cache-Control": "no-store"
+        });
+        response.end(content);
+      })
+      .catch(() => {
+        response.writeHead(404);
+        response.end("Not found");
+      });
+  });
+
+  return new Promise((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", () => {
+      server.off("error", reject);
+      resolve(server);
+    });
+  });
+}
+
+async function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),
       contextIsolation: true,
-      nodeIntegration: false
+      nodeIntegration: false,
+      nativeWindowOpen: true
     }
   });
 
@@ -25,15 +85,25 @@ function createWindow() {
       }
     }, 1000);
   } else {
-    mainWindow.loadFile(path.join(__dirname, "../dist/index.html"));
+    staticServer = await createStaticServer(path.join(__dirname, "../dist"));
+    const address = staticServer.address();
+    mainWindow.loadURL(`http://127.0.0.1:${address.port}/`);
   }
 }
 
 app.whenReady().then(() => {
-  createWindow();
+  createWindow().catch((error) => {
+    console.error("Failed to create window", error);
+    app.quit();
+  });
 
   app.on("activate", function () {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow();
+    if (BrowserWindow.getAllWindows().length === 0) {
+      createWindow().catch((error) => {
+        console.error("Failed to create window", error);
+        app.quit();
+      });
+    }
   });
 });
 
@@ -41,7 +111,148 @@ app.on("window-all-closed", function () {
   if (process.platform !== "darwin") app.quit();
 });
 
+app.on("before-quit", function () {
+  if (staticServer) {
+    staticServer.close();
+    staticServer = null;
+  }
+});
+
+function createOAuthCallbackServer(expectedState) {
+  let server;
+  let rejectCallback;
+
+  const codePromise = new Promise((resolve, reject) => {
+    rejectCallback = reject;
+    server = http.createServer((request, response) => {
+      const requestUrl = new URL(request.url, "http://127.0.0.1");
+
+      if (requestUrl.pathname !== "/oauth2callback") {
+        response.writeHead(404);
+        response.end("Not found");
+        return;
+      }
+
+      const error = requestUrl.searchParams.get("error");
+      const code = requestUrl.searchParams.get("code");
+      const state = requestUrl.searchParams.get("state");
+
+      if (state !== expectedState) {
+        response.writeHead(400, { "Content-Type": "text/html; charset=utf-8" });
+        response.end("<h1>Sign-in failed</h1><p>Invalid state. You can close this tab.</p>");
+        reject(new Error("Invalid OAuth state."));
+        server.close();
+        return;
+      }
+
+      if (error || !code) {
+        response.writeHead(400, { "Content-Type": "text/html; charset=utf-8" });
+        response.end("<h1>Sign-in failed</h1><p>You can close this tab and return to TimeMapTodo.</p>");
+        reject(new Error(error || "Missing OAuth authorization code."));
+        server.close();
+        return;
+      }
+
+      response.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+      response.end("<h1>Sign-in complete</h1><p>You can close this tab and return to TimeMapTodo.</p>");
+      resolve({ code });
+      server.close();
+    });
+  });
+
+  const readyPromise = new Promise((resolve, reject) => {
+    const onError = (error) => {
+      rejectCallback(error);
+      reject(error);
+    };
+    server.once("error", onError);
+    server.listen(0, "127.0.0.1", () => {
+      server.off("error", onError);
+      resolve({ port: server.address().port });
+    });
+  });
+
+  return {
+    ready: readyPromise,
+    code: codePromise,
+    close: () => server.close()
+  };
+}
+
+async function exchangeOAuthCode({ clientId, clientSecret, code, codeVerifier, redirectUri }) {
+  const tokenParams = new URLSearchParams({
+    client_id: clientId,
+    code,
+    code_verifier: codeVerifier,
+    grant_type: "authorization_code",
+    redirect_uri: redirectUri
+  });
+
+  if (clientSecret) {
+    tokenParams.set("client_secret", clientSecret);
+  }
+
+  const response = await fetch("https://oauth2.googleapis.com/token", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded"
+    },
+    body: tokenParams
+  });
+
+  const body = await response.json();
+
+  if (!response.ok) {
+    throw new Error(body.error_description || body.error || "Failed to exchange Google OAuth code.");
+  }
+
+  return {
+    accessToken: body.access_token,
+    idToken: body.id_token
+  };
+}
+
+ipcMain.handle("google-oauth-sign-in", async (event, { clientId, clientSecret }) => {
+  if (!clientId) {
+    throw new Error("Missing Google desktop OAuth client ID.");
+  }
+
+  const codeVerifier = createCodeVerifier();
+  const codeChallenge = createCodeChallenge(codeVerifier);
+  const state = base64UrlEncode(crypto.randomBytes(24));
+  const callbackServer = createOAuthCallbackServer(state);
+  const { port } = await callbackServer.ready;
+  const redirectUri = `http://127.0.0.1:${port}/oauth2callback`;
+
+  const authUrl = new URL("https://accounts.google.com/o/oauth2/v2/auth");
+  authUrl.searchParams.set("client_id", clientId);
+  authUrl.searchParams.set("redirect_uri", redirectUri);
+  authUrl.searchParams.set("response_type", "code");
+  authUrl.searchParams.set("scope", "openid email profile");
+  authUrl.searchParams.set("code_challenge", codeChallenge);
+  authUrl.searchParams.set("code_challenge_method", "S256");
+  authUrl.searchParams.set("state", state);
+  authUrl.searchParams.set("prompt", "select_account");
+
+  await shell.openExternal(authUrl.toString());
+
+  try {
+    const { code } = await callbackServer.code;
+    return exchangeOAuthCode({ clientId, clientSecret, code, codeVerifier, redirectUri });
+  } catch (error) {
+    callbackServer.close();
+    throw error;
+  }
+});
+
 const dataFilePath = path.join(app.getPath("userData"), "timeMapTodoData.json");
+
+function getScopedDataFilePath(storageKey) {
+  if (!storageKey) return dataFilePath;
+
+  const safeStorageKey = String(storageKey).replace(/[^a-zA-Z0-9_-]/g, "_");
+  return path.join(app.getPath("userData"), `timeMapTodoData-${safeStorageKey}.json`);
+}
 
 function migrateScheduledTasks(tasks = [], boardState = {}) {
   const assignmentMap = new Map();
@@ -118,9 +329,18 @@ function normalizeStoredData(data) {
   };
 }
 
-ipcMain.handle("load-data", async () => {
+ipcMain.handle("load-data", async (event, payload = {}) => {
+  const storageKey = payload.storageKey || null;
+  const includeLegacy = Boolean(payload.options?.includeLegacy);
+  const scopedDataFilePath = getScopedDataFilePath(storageKey);
+
   try {
-    if (fs.existsSync(dataFilePath)) {
+    if (fs.existsSync(scopedDataFilePath)) {
+      const data = await fs.promises.readFile(scopedDataFilePath, "utf8");
+      return normalizeStoredData(JSON.parse(data));
+    }
+
+    if (includeLegacy && scopedDataFilePath !== dataFilePath && fs.existsSync(dataFilePath)) {
       const data = await fs.promises.readFile(dataFilePath, "utf8");
       return normalizeStoredData(JSON.parse(data));
     }
@@ -130,9 +350,13 @@ ipcMain.handle("load-data", async () => {
   return null;
 });
 
-ipcMain.handle("save-data", async (event, data) => {
+ipcMain.handle("save-data", async (event, payload = {}) => {
+  const data = payload.data;
+  const storageKey = payload.storageKey || null;
+  const scopedDataFilePath = getScopedDataFilePath(storageKey);
+
   try {
-    await fs.promises.writeFile(dataFilePath, JSON.stringify(normalizeStoredData(data)), "utf8");
+    await fs.promises.writeFile(scopedDataFilePath, JSON.stringify(normalizeStoredData(data)), "utf8");
     return { success: true };
   } catch (error) {
     console.error("Failed to save data", error);

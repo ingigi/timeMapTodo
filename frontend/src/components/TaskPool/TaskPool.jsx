@@ -1,5 +1,5 @@
 import { Check, Filter, Pause, Pencil, Play, Plus, Repeat, SortAsc, SortDesc, Trash2, X } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import TaskListItem from "./TaskListItem";
 import TaskWorkflowModal from "./TaskWorkflowModal";
 import { getCurrentDrag } from "../../utils/dragState";
@@ -85,8 +85,6 @@ export default function TaskPool({
   const [editingTagDraft, setEditingTagDraft] = useState("");
   const [isDropTarget, setIsDropTarget] = useState(false);
   const [isWorkflowModalOpen, setIsWorkflowModalOpen] = useState(false);
-
-  const activeWorkflowCount = useMemo(() => workflows.filter((workflow) => workflow.enabled).length, [workflows]);
 
   const toggleSort = (key) => {
     setSortConfig((prev) => ({

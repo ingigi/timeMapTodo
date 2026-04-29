@@ -5,6 +5,19 @@ import CalendarArea from "./components/CalendarArea/CalendarArea";
 import HandDrawnPopup from "./components/Common/HandDrawnPopup";
 import { getTaskStats, getTaskStatus } from "./utils/taskTime";
 import { materializeWorkflowTasks, normalizeWorkflowRecord } from "./utils/workflows";
+import {
+  createAccountWithEmail,
+  getFirebaseLegacyOwnerEmail,
+  getFirebaseWorkspaceId,
+  isFirebaseConfigured,
+  loadLegacyFirebaseAppState,
+  onFirebaseAuthChange,
+  saveFirebaseAppState,
+  signInWithEmail,
+  signInWithGoogle,
+  signOutFirebase,
+  subscribeFirebaseAppState
+} from "./services/firebaseAppState";
 
 const TASK_COLORS = ["#5B8DEF", "#4FB7A8", "#D9A441", "#8A7FD1", "#7FA36B", "#C97B63", "#5FA3B7", "#C27A92"];
 const UI_STORAGE_KEY = "timemaptodo-ui-settings-v1";
@@ -12,6 +25,11 @@ const UI_STORAGE_KEY = "timemaptodo-ui-settings-v1";
 const DEFAULT_TASK_LIST_FILTER_CONFIG = { statuses: [], tags: [] };
 const DEFAULT_BOARD_FILTER_CONFIG = { statuses: [], tags: [] };
 const DEFAULT_SORT_CONFIG = { key: "deadline", order: "asc" };
+const EMPTY_APP_STATE = {
+  tasks: [],
+  tagOptions: [],
+  workflows: []
+};
 
 const readPersistedUiSettings = () => {
   if (typeof window === "undefined") {
@@ -133,11 +151,155 @@ const groupTasksByScheduledDate = (tasks) =>
     return groups;
   }, {});
 
+const normalizeStoredAppState = (data) => {
+  if (!data || !data.tasks) return null;
+
+  const migratedTasks = migrateLegacyTasks(data.tasks, data.boardState || {});
+
+  return {
+    tasks: migratedTasks,
+    tagOptions: Array.from(new Set((data.tagOptions || migratedTasks.flatMap((task) => task.tags || [])))).sort((a, b) =>
+      a.localeCompare(b)
+    ),
+    workflows: Array.isArray(data.workflows)
+      ? data.workflows.map((workflow, index) => normalizeWorkflowRecord(workflow, index, TASK_COLORS))
+      : []
+  };
+};
+
+const isLegacyOwnerUser = (user) => {
+  const legacyOwnerEmail = getFirebaseLegacyOwnerEmail();
+  return Boolean(legacyOwnerEmail && user?.email?.toLowerCase() === legacyOwnerEmail);
+};
+
+function AuthGate({ authState, onGoogleSignIn, onSignIn, onCreateAccount }) {
+  const [mode, setMode] = useState("signin");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [errorMessage, setErrorMessage] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isGoogleSubmitting, setIsGoogleSubmitting] = useState(false);
+
+  const handleGoogleSignIn = async () => {
+    setErrorMessage("");
+    setIsGoogleSubmitting(true);
+
+    try {
+      await onGoogleSignIn();
+    } catch (error) {
+      setErrorMessage(error.message || "Google sign-in failed.");
+    } finally {
+      setIsGoogleSubmitting(false);
+    }
+  };
+
+  const handleSubmit = async (event) => {
+    event.preventDefault();
+    setErrorMessage("");
+    setIsSubmitting(true);
+
+    try {
+      if (mode === "create") {
+        await onCreateAccount(email, password);
+      } else {
+        await onSignIn(email, password);
+      }
+    } catch (error) {
+      setErrorMessage(error.message || "Authentication failed.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="flex h-screen items-center justify-center bg-[#F8F9FB] px-6">
+      <form onSubmit={handleSubmit} className="w-full max-w-[380px] rounded-md border border-slate-200 bg-white p-6 shadow-sm">
+        <div className="mb-6">
+          <h1 className="text-xl font-semibold text-slate-900">TimeMapTodo</h1>
+          <p className="mt-2 text-sm leading-6 text-slate-500">
+            Sign in with Google to sync tasks securely with Firebase.
+          </p>
+        </div>
+
+        <button
+          type="button"
+          onClick={handleGoogleSignIn}
+          disabled={isGoogleSubmitting || isSubmitting || authState.status === "loading"}
+          className="mb-4 flex w-full items-center justify-center gap-3 rounded-md border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-800 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+        >
+          <span className="flex h-5 w-5 items-center justify-center rounded-full border border-slate-200 text-xs font-bold text-blue-600">
+            G
+          </span>
+          {isGoogleSubmitting ? "Opening Google..." : "Continue with Google"}
+        </button>
+
+        <div className="mb-4 flex items-center gap-3 text-xs font-medium text-slate-400">
+          <div className="h-px flex-1 bg-slate-200" />
+          Email backup
+          <div className="h-px flex-1 bg-slate-200" />
+        </div>
+
+        <label className="mb-4 block">
+          <span className="mb-1 block text-sm font-medium text-slate-700">Email</span>
+          <input
+            type="email"
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+            className="w-full rounded-md border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+            autoComplete="email"
+            required
+          />
+        </label>
+
+        <label className="mb-4 block">
+          <span className="mb-1 block text-sm font-medium text-slate-700">Password</span>
+          <input
+            type="password"
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+            className="w-full rounded-md border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+            autoComplete={mode === "create" ? "new-password" : "current-password"}
+            minLength={6}
+            required
+          />
+        </label>
+
+        {errorMessage || authState.error ? (
+          <div className="mb-4 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+            {errorMessage || authState.error}
+          </div>
+        ) : null}
+
+        <button
+          type="submit"
+          disabled={isSubmitting || isGoogleSubmitting || authState.status === "loading"}
+          className="w-full rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:bg-slate-400"
+        >
+          {isSubmitting ? "Please wait..." : mode === "create" ? "Create account" : "Sign in"}
+        </button>
+
+        <button
+          type="button"
+          onClick={() => {
+            setMode((current) => (current === "create" ? "signin" : "create"));
+            setErrorMessage("");
+          }}
+          className="mt-3 w-full rounded-md border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-50"
+        >
+          {mode === "create" ? "Use an existing account" : "Create a new account"}
+        </button>
+      </form>
+    </div>
+  );
+}
+
 function App() {
   const [persistedUiSettings] = useState(() => readPersistedUiSettings());
   const [appState, setAppState] = useState({
-    tasks: MOCK_TASKS.map(normalizeTaskRecord),
-    tagOptions: Array.from(new Set(MOCK_TASKS.flatMap((task) => task.tags || []))).sort((a, b) => a.localeCompare(b)),
+    tasks: isFirebaseConfigured() ? [] : MOCK_TASKS.map(normalizeTaskRecord),
+    tagOptions: isFirebaseConfigured()
+      ? []
+      : Array.from(new Set(MOCK_TASKS.flatMap((task) => task.tags || []))).sort((a, b) => a.localeCompare(b)),
     workflows: []
   });
   const [selectedTaskId, setSelectedTaskId] = useState(null);
@@ -158,48 +320,130 @@ function App() {
   const [hoveredTaskMeta, setHoveredTaskMeta] = useState(null);
   const saveTimeoutRef = useRef(null);
   const inspectorCloseTimeoutRef = useRef(null);
+  const remoteApplyingRef = useRef(false);
   const [isLoaded, setIsLoaded] = useState(false);
+  const [dataBackend, setDataBackend] = useState(() => (isFirebaseConfigured() ? "firebase" : "local"));
+  const [authState, setAuthState] = useState(() => ({
+    status: isFirebaseConfigured() ? "loading" : "disabled",
+    user: null,
+    error: null
+  }));
+
+  useEffect(() => {
+    if (!isFirebaseConfigured()) return undefined;
+
+    return onFirebaseAuthChange((user) => {
+      setAuthState({
+        status: user ? "signed-in" : "signed-out",
+        user,
+        error: null
+      });
+      setIsLoaded(false);
+    });
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
+    let unsubscribeFirebase = () => {};
 
-    if (window.api && window.api.loadData) {
-      window.api
-        .loadData()
-        .then((data) => {
-          if (cancelled) return;
+    const applyStoredData = (data, source) => {
+      const normalizedState = normalizeStoredAppState(data);
+      if (normalizedState) {
+        if (source === "firebase") {
+          remoteApplyingRef.current = true;
+        }
+        setAppState(normalizedState);
+      }
+    };
 
-          if (data && data.tasks) {
-            const migratedTasks = migrateLegacyTasks(data.tasks, data.boardState || {});
-
-            setAppState({
-              tasks: migratedTasks,
-              tagOptions: Array.from(new Set((data.tagOptions || migratedTasks.flatMap((task) => task.tags || [])))).sort((a, b) =>
-                a.localeCompare(b)
-              ),
-              workflows: Array.isArray(data.workflows)
-                ? data.workflows.map((workflow, index) => normalizeWorkflowRecord(workflow, index, TASK_COLORS))
-                : []
-            });
+    const loadLocalData = async ({ apply = true, includeLegacy = false } = {}) => {
+      if (window.api && window.api.loadData) {
+        try {
+          const data = await window.api.loadData(authState.user?.uid || null, { includeLegacy });
+          if (!cancelled && apply) {
+            applyStoredData(data, "local");
           }
-          setIsLoaded(true);
-        })
-        .catch((err) => {
+          return data;
+        } catch (err) {
+          console.error("Failed to load local data", err);
+        }
+      }
+
+      return null;
+    };
+
+    const finishWithLocalData = async () => {
+      await loadLocalData();
+      if (!cancelled) {
+        setDataBackend("local");
+        setIsLoaded(true);
+      }
+    };
+
+    if (isFirebaseConfigured() && authState.status !== "signed-in") {
+      return () => {
+        cancelled = true;
+        unsubscribeFirebase();
+      };
+    }
+
+    if (isFirebaseConfigured()) {
+      unsubscribeFirebase = subscribeFirebaseAppState({
+        user: authState.user,
+        onData: async (remoteData) => {
           if (cancelled) return;
-          console.error("Failed to load data", err);
+
+          if (remoteData?.tasks) {
+            applyStoredData(remoteData, "firebase");
+            setDataBackend("firebase");
+            setIsLoaded(true);
+            return;
+          }
+
+          const shouldClaimLegacyData = isLegacyOwnerUser(authState.user);
+          const localData = shouldClaimLegacyData ? await loadLocalData({ apply: false, includeLegacy: true }) : null;
+          const legacyFirebaseData =
+            shouldClaimLegacyData && !localData?.tasks
+              ? await loadLegacyFirebaseAppState().catch((err) => {
+                  console.error("Failed to read legacy Firebase data", err);
+                  return null;
+                })
+              : null;
+          if (cancelled) return;
+
+          setDataBackend("firebase");
           setIsLoaded(true);
-        });
-    } else {
-      queueMicrotask(() => {
-        if (!cancelled) {
-          setIsLoaded(true);
+
+          if (legacyFirebaseData?.tasks || localData?.tasks) {
+            const normalizedLocalState = normalizeStoredAppState(legacyFirebaseData || localData);
+            if (normalizedLocalState) {
+              setAppState(normalizedLocalState);
+              saveFirebaseAppState(authState.user, normalizedLocalState).catch((err) => {
+                console.error("Failed to seed Firebase data", err);
+              });
+            }
+          } else {
+            setAppState(EMPTY_APP_STATE);
+          }
+        },
+        onError: async (err) => {
+          if (cancelled) return;
+
+          console.error("Failed to subscribe to Firebase data", err);
+          await finishWithLocalData();
         }
       });
+    } else {
+      queueMicrotask(() => {
+        finishWithLocalData();
+      });
     }
+
     return () => {
       cancelled = true;
+      unsubscribeFirebase();
     };
-  }, []);
+  }, [authState.status, authState.user]);
 
   const openInspector = useCallback((taskId, options = {}) => {
     if (inspectorCloseTimeoutRef.current) {
@@ -238,15 +482,31 @@ function App() {
   }, []);
 
   useEffect(() => {
-    if (isLoaded && window.api && window.api.saveData) {
+    if (isLoaded) {
       if (saveTimeoutRef.current) {
         clearTimeout(saveTimeoutRef.current);
       }
 
       saveTimeoutRef.current = setTimeout(() => {
-        window.api.saveData(appState).catch((err) => {
-          console.error("Save error:", err);
-        });
+        const saveLocalBackup = window.api?.saveData
+          ? window.api.saveData(appState, authState.user?.uid || null).catch((err) => {
+              console.error("Local save error:", err);
+            })
+          : Promise.resolve();
+
+        if (remoteApplyingRef.current) {
+          remoteApplyingRef.current = false;
+          void saveLocalBackup;
+          return;
+        }
+
+        if (isFirebaseConfigured()) {
+          saveFirebaseAppState(authState.user, appState).catch((err) => {
+            console.error("Firebase save error:", err);
+          });
+        }
+
+        void saveLocalBackup;
       }, 1000);
     }
 
@@ -255,7 +515,7 @@ function App() {
         clearTimeout(saveTimeoutRef.current);
       }
     };
-  }, [appState, isLoaded]);
+  }, [appState, isLoaded, authState.user]);
 
   useEffect(() => {
     if (!isLoaded || typeof window === "undefined") return;
@@ -277,10 +537,16 @@ function App() {
   useEffect(() => {
     if (!isLoaded) return;
 
-    setAppState((prev) => {
-      const { nextState, createdCount } = materializeWorkflowTasks(prev, TASK_COLORS, new Date());
-      return createdCount > 0 || nextState !== prev ? nextState : prev;
-    });
+    const materializeTimeoutId = window.setTimeout(() => {
+      setAppState((prev) => {
+        const { nextState, createdCount } = materializeWorkflowTasks(prev, TASK_COLORS, new Date());
+        return createdCount > 0 || nextState !== prev ? nextState : prev;
+      });
+    }, 0);
+
+    return () => {
+      window.clearTimeout(materializeTimeoutId);
+    };
   }, [isLoaded, appState.workflows]);
 
   const handleCreateInlineTask = useCallback(() => {
@@ -515,6 +781,17 @@ function App() {
   const hoveredTaskDeadlineKey = hoveredTaskMeta?.deadlineDateKey || hoveredTask?.deadline || null;
 
   if (!isLoaded) {
+    if (isFirebaseConfigured() && authState.status !== "signed-in") {
+      return (
+          <AuthGate
+            authState={authState}
+            onGoogleSignIn={signInWithGoogle}
+            onSignIn={signInWithEmail}
+            onCreateAccount={createAccountWithEmail}
+          />
+      );
+    }
+
     return <div className="flex h-screen items-center justify-center bg-[#F8F9FB] font-medium text-slate-500">Loading...</div>;
   }
 
@@ -597,6 +874,14 @@ function App() {
             onRenameTag={handleRenameTagOption}
           />
         </div>
+      </div>
+      <div className="fixed bottom-3 right-4 rounded-full border border-slate-200 bg-white/90 px-3 py-1 text-xs font-medium text-slate-500 shadow-sm backdrop-blur">
+        {dataBackend === "firebase" ? `Firebase: ${getFirebaseWorkspaceId()} / ${authState.user?.email || "signed in"}` : "Local only"}
+        {authState.user ? (
+          <button type="button" onClick={signOutFirebase} className="ml-2 border-l border-slate-200 pl-2 text-slate-700 hover:text-slate-950">
+            Sign out
+          </button>
+        ) : null}
       </div>
     </MainLayout>
   );

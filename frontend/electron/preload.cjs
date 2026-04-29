@@ -1,6 +1,7 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('api', {
-  loadData: () => ipcRenderer.invoke('load-data'),
-  saveData: (data) => ipcRenderer.invoke('save-data', data),
+  loadData: (storageKey, options) => ipcRenderer.invoke('load-data', { storageKey, options }),
+  saveData: (data, storageKey) => ipcRenderer.invoke('save-data', { data, storageKey }),
+  signInWithGoogleExternal: (clientId, clientSecret) => ipcRenderer.invoke('google-oauth-sign-in', { clientId, clientSecret }),
 });
