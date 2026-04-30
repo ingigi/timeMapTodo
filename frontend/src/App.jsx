@@ -1,14 +1,16 @@
 ﻿import { useState, useCallback, useRef, useEffect } from "react";
-import { Bell, ChevronDown, LogOut, Settings, ShieldCheck, User } from "lucide-react";
+import { Bell, LogOut, Minus, Settings, ShieldCheck, Square, User, X } from "lucide-react";
 import MainLayout from "./components/layout/MainLayout";
 import TaskPool from "./components/TaskPool/TaskPool";
 import CalendarArea from "./components/CalendarArea/CalendarArea";
 import HandDrawnPopup from "./components/Common/HandDrawnPopup";
 import { getTaskStats, getTaskStatus } from "./utils/taskTime";
 import { materializeWorkflowTasks, normalizeWorkflowRecord } from "./utils/workflows";
+import { addMonths, addWeeks, startOfWeek } from "./utils/dateUtils";
 import {
   createAccountWithEmail,
   getFirebaseLegacyOwnerEmail,
+  getGoogleCalendarAccessToken,
   isFirebaseConfigured,
   loadLegacyFirebaseAppState,
   onFirebaseAuthChange,
@@ -18,14 +20,31 @@ import {
   signOutFirebase,
   subscribeFirebaseAppState
 } from "./services/firebaseAppState";
+import { fetchGoogleCalendarEvents } from "./services/googleCalendar";
 
 const TASK_COLORS = ["#5B8DEF", "#4FB7A8", "#D9A441", "#8A7FD1", "#7FA36B", "#C97B63", "#5FA3B7", "#C27A92"];
 const UI_STORAGE_KEY = "timemaptodo-ui-settings-v1";
+const GOOGLE_CALENDAR_REFRESH_INTERVAL_MS = 60 * 1000;
+const DEFAULT_TASK_SIDEBAR_WIDTH = 320;
+const MIN_TASK_SIDEBAR_WIDTH = 260;
+const MAX_TASK_SIDEBAR_WIDTH = 560;
 
 const EMPTY_APP_STATE = {
   tasks: [],
   tagOptions: [],
   workflows: []
+};
+
+const getCalendarFetchRange = (baseDate, viewType) => {
+  if (viewType === "month") {
+    const start = new Date(baseDate.getFullYear(), baseDate.getMonth(), 1);
+    const end = addMonths(start, 1);
+    return { timeMin: start, timeMax: end };
+  }
+
+  const start = startOfWeek(baseDate);
+  const end = addWeeks(start, 1);
+  return { timeMin: start, timeMax: end };
 };
 
 const readPersistedUiSettings = () => {
@@ -38,8 +57,13 @@ const readPersistedUiSettings = () => {
     if (!raw) return {};
 
     const parsed = JSON.parse(raw);
+    const sidebarWidth = Number(parsed.taskSidebarWidth);
     return {
-      viewType: parsed.viewType === "month" ? "month" : "week"
+      viewType: parsed.viewType === "month" ? "month" : "week",
+      taskSidebarWidth:
+        Number.isFinite(sidebarWidth) && sidebarWidth >= MIN_TASK_SIDEBAR_WIDTH && sidebarWidth <= MAX_TASK_SIDEBAR_WIDTH
+          ? sidebarWidth
+          : DEFAULT_TASK_SIDEBAR_WIDTH
     };
   } catch (error) {
     console.warn("Failed to read UI settings", error);
@@ -288,10 +312,40 @@ function AuthGate({ authState, onGoogleSignIn, onSignIn, onCreateAccount }) {
   );
 }
 
-function AppHeader({ user }) {
+function AppHeader({ user, onSignOut }) {
+  const isDesktopApp = Boolean(window.api?.isDesktopApp);
+  const [isAccountMenuOpen, setIsAccountMenuOpen] = useState(false);
+  const accountMenuRef = useRef(null);
+
+  useEffect(() => {
+    if (!isAccountMenuOpen) return;
+
+    const handlePointerDown = (event) => {
+      if (accountMenuRef.current?.contains(event.target)) return;
+      setIsAccountMenuOpen(false);
+    };
+
+    const handleKeyDown = (event) => {
+      if (event.key === "Escape") {
+        setIsAccountMenuOpen(false);
+      }
+    };
+
+    document.addEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isAccountMenuOpen]);
+
   return (
-    <header className="flex h-14 shrink-0 items-center justify-between border-b border-[#20242A] bg-[#0B0E11]/90 px-4 backdrop-blur">
-      <div className="flex min-w-0 items-center gap-4">
+    <header
+      className="flex h-14 shrink-0 items-center justify-between border-b border-[#20242A] bg-[#0B0E11]/95 pl-4 backdrop-blur"
+      style={isDesktopApp ? { WebkitAppRegion: "drag" } : undefined}
+    >
+      <div className="flex min-w-0 items-center gap-4" style={isDesktopApp ? { WebkitAppRegion: "no-drag" } : undefined}>
         <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-[#0CCB8E] to-[#0A9F74] text-sm font-bold text-[#06100D] shadow-[0_10px_30px_rgba(12,203,142,0.22)]">
           TM
         </div>
@@ -300,7 +354,7 @@ function AppHeader({ user }) {
         </div>
       </div>
 
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2" style={isDesktopApp ? { WebkitAppRegion: "no-drag" } : undefined}>
         <button
           type="button"
           className="flex h-9 w-9 items-center justify-center rounded-lg text-[#8B949E] transition-colors hover:bg-[#161A1F] hover:text-[#F7F7F8]"
@@ -316,29 +370,73 @@ function AppHeader({ user }) {
           <Settings className="h-4 w-4" />
         </button>
         {user ? (
-          <div className="group relative">
-            <button className="flex max-w-[250px] items-center gap-2 rounded-lg px-3 py-1.5 text-sm font-medium text-[#8B949E] transition hover:bg-[#161A1F] hover:text-[#F7F7F8]">
-              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#161A1F]">
-                <User className="h-4 w-4" />
-              </span>
-              <span className="hidden truncate sm:block">{user.email || "Signed in"}</span>
-              <ChevronDown className="h-4 w-4 shrink-0 text-[#9CA3AF]" />
-            </button>
-            <div className="invisible absolute right-0 top-11 z-40 w-72 rounded-lg border border-[#20242A] bg-[#111418] p-2 opacity-0 shadow-lg transition group-hover:visible group-hover:opacity-100">
-              <div className="px-3 py-2">
-                <div className="text-xs font-medium text-[#71717A]">Signed in as</div>
-                <div className="mt-1 truncate text-sm font-medium text-[#F7F7F8]">{user.email || "Signed in"}</div>
-              </div>
-              <div className="my-1 border-t border-[#34363D]" />
+          <>
+            <div className="relative" ref={accountMenuRef}>
               <button
                 type="button"
-                onClick={signOutFirebase}
-                className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm font-medium text-[#0CCB8E] transition hover:bg-[#161A1F] hover:text-[#34D399]"
+                onClick={() => setIsAccountMenuOpen((current) => !current)}
+                className="flex max-w-[280px] items-center gap-2 rounded-lg px-3 py-1.5 text-sm font-medium text-[#8B949E] transition-colors hover:bg-[#161A1F] hover:text-[#F7F7F8]"
+                aria-expanded={isAccountMenuOpen}
+                aria-haspopup="menu"
               >
-                <LogOut className="h-4 w-4" />
-                Sign out
+                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#161A1F]">
+                  <User className="h-4 w-4" />
+                </span>
+                <span className="hidden truncate sm:block">{user.email || "Signed in"}</span>
               </button>
+
+              {isAccountMenuOpen ? (
+                <div
+                  className="absolute right-0 top-[calc(100%+10px)] z-50 w-72 rounded-xl border border-[#252A32] bg-[#111418] p-2 shadow-[0_22px_70px_rgba(0,0,0,0.42)]"
+                  role="menu"
+                >
+                  <div className="border-b border-[#252A32] px-3 py-2">
+                    <div className="text-xs font-semibold uppercase tracking-[0.16em] text-[#6F7A88]">Account</div>
+                    <div className="mt-1 truncate text-sm font-semibold text-[#E5E7EB]">{user.email || "Signed in"}</div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsAccountMenuOpen(false);
+                      onSignOut();
+                    }}
+                    className="mt-2 flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm font-semibold text-[#A8B2C0] transition-colors hover:bg-[#1A1F27] hover:text-[#F7F7F8]"
+                    role="menuitem"
+                  >
+                    <LogOut className="h-4 w-4" />
+                    Sign out
+                  </button>
+                </div>
+              ) : null}
             </div>
+          </>
+        ) : null}
+        {isDesktopApp ? (
+          <div className="ml-2 flex h-14 items-center border-l border-[#20242A]">
+            <button
+              type="button"
+              onClick={() => window.api?.minimizeWindow?.()}
+              className="flex h-14 w-12 items-center justify-center text-[#8B949E] transition-colors hover:bg-[#161A1F] hover:text-[#F7F7F8]"
+              title="Minimize"
+            >
+              <Minus className="h-4 w-4" />
+            </button>
+            <button
+              type="button"
+              onClick={() => window.api?.toggleMaximizeWindow?.()}
+              className="flex h-14 w-12 items-center justify-center text-[#8B949E] transition-colors hover:bg-[#161A1F] hover:text-[#F7F7F8]"
+              title="Maximize"
+            >
+              <Square className="h-3.5 w-3.5" />
+            </button>
+            <button
+              type="button"
+              onClick={() => window.api?.closeWindow?.()}
+              className="flex h-14 w-12 items-center justify-center text-[#8B949E] transition-colors hover:bg-red-500/80 hover:text-white"
+              title="Close"
+            >
+              <X className="h-4 w-4" />
+            </button>
           </div>
         ) : null}
       </div>
@@ -358,12 +456,19 @@ function App() {
   const [selectedTaskId, setSelectedTaskId] = useState(null);
   const [baseDate, setBaseDate] = useState(new Date());
   const [viewType, setViewType] = useState(persistedUiSettings.viewType || "week");
+  const [taskSidebarWidth, setTaskSidebarWidth] = useState(persistedUiSettings.taskSidebarWidth || DEFAULT_TASK_SIDEBAR_WIDTH);
+  const [isResizingTaskSidebar, setIsResizingTaskSidebar] = useState(false);
   const [editingTaskId, setEditingTaskId] = useState(null);
   const [isInspectorMounted, setIsInspectorMounted] = useState(false);
   const [isInspectorVisible, setIsInspectorVisible] = useState(false);
   const [inspectorShouldFocusTitle, setInspectorShouldFocusTitle] = useState(false);
   const [hoveredTaskId, setHoveredTaskId] = useState(null);
   const [hoveredTaskMeta, setHoveredTaskMeta] = useState(null);
+  const [googleCalendarEvents, setGoogleCalendarEvents] = useState([]);
+  const [googleCalendarStatus, setGoogleCalendarStatus] = useState("idle");
+  const [googleCalendarError, setGoogleCalendarError] = useState("");
+  const [googleCalendarAuthVersion, setGoogleCalendarAuthVersion] = useState(0);
+  const [googleCalendarRefreshVersion, setGoogleCalendarRefreshVersion] = useState(0);
   const saveTimeoutRef = useRef(null);
   const inspectorCloseTimeoutRef = useRef(null);
   const remoteApplyingRef = useRef(false);
@@ -567,7 +672,8 @@ function App() {
     if (!isLoaded || typeof window === "undefined") return;
 
     const uiSettings = {
-      viewType
+      viewType,
+      taskSidebarWidth
     };
 
     try {
@@ -575,7 +681,7 @@ function App() {
     } catch (error) {
       console.warn("Failed to save UI settings", error);
     }
-  }, [viewType, isLoaded]);
+  }, [viewType, taskSidebarWidth, isLoaded]);
 
   useEffect(() => {
     if (!isLoaded) return;
@@ -591,6 +697,76 @@ function App() {
       window.clearTimeout(materializeTimeoutId);
     };
   }, [isLoaded, appState.workflows]);
+
+  useEffect(() => {
+    if (!isLoaded || authState.status !== "signed-in" || !getGoogleCalendarAccessToken()) return;
+
+    const refreshGoogleCalendar = () => {
+      if (document.visibilityState === "hidden") return;
+      setGoogleCalendarRefreshVersion((current) => current + 1);
+    };
+
+    const intervalId = window.setInterval(refreshGoogleCalendar, GOOGLE_CALENDAR_REFRESH_INTERVAL_MS);
+    const unsubscribeAppResumed = window.api?.onAppResumed?.(refreshGoogleCalendar);
+    window.addEventListener("focus", refreshGoogleCalendar);
+    document.addEventListener("visibilitychange", refreshGoogleCalendar);
+
+    return () => {
+      window.clearInterval(intervalId);
+      unsubscribeAppResumed?.();
+      window.removeEventListener("focus", refreshGoogleCalendar);
+      document.removeEventListener("visibilitychange", refreshGoogleCalendar);
+    };
+  }, [authState.status, isLoaded, googleCalendarAuthVersion]);
+
+  useEffect(() => {
+    if (!isLoaded || authState.status !== "signed-in") {
+      queueMicrotask(() => {
+        setGoogleCalendarEvents([]);
+        setGoogleCalendarStatus("idle");
+        setGoogleCalendarError("");
+      });
+      return;
+    }
+
+    const accessToken = getGoogleCalendarAccessToken();
+    if (!accessToken) {
+      queueMicrotask(() => {
+        setGoogleCalendarEvents([]);
+        setGoogleCalendarStatus("needs-sign-in");
+        setGoogleCalendarError("");
+      });
+      return;
+    }
+
+    let cancelled = false;
+    const { timeMin, timeMax } = getCalendarFetchRange(baseDate, viewType);
+    queueMicrotask(() => {
+      if (!cancelled) {
+        setGoogleCalendarStatus((current) => (current === "ready" ? "ready" : "loading"));
+        setGoogleCalendarError("");
+      }
+    });
+
+    fetchGoogleCalendarEvents({ accessToken, timeMin, timeMax })
+      .then((events) => {
+        if (cancelled) return;
+        setGoogleCalendarEvents(events);
+        setGoogleCalendarStatus("ready");
+        setGoogleCalendarError("");
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        console.error("Failed to load Google Calendar events", error);
+        setGoogleCalendarEvents([]);
+        setGoogleCalendarStatus("error");
+        setGoogleCalendarError(error.message || "Failed to load Google Calendar events.");
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [authState.status, baseDate, googleCalendarAuthVersion, googleCalendarRefreshVersion, isLoaded, viewType]);
 
   const handleCreateInlineTask = useCallback(() => {
     const newTaskId = `task_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
@@ -814,6 +990,68 @@ function App() {
     setHoveredTaskMeta(taskId ? meta : null);
   }, []);
 
+  const handleSignOut = useCallback(() => {
+    closeInspector();
+    setAuthState({
+      status: "signed-out",
+      user: null,
+      error: null
+    });
+    setIsLoaded(false);
+    setGoogleCalendarEvents([]);
+    setGoogleCalendarStatus("idle");
+    setGoogleCalendarError("");
+    signOutFirebase().catch((error) => {
+      console.error("Sign out failed", error);
+      setAuthState((prev) => ({
+        ...prev,
+        error: error.message || "Sign out failed."
+      }));
+    });
+  }, [closeInspector]);
+
+  const handleReconnectGoogleCalendar = useCallback(async () => {
+    setGoogleCalendarStatus("loading");
+    setGoogleCalendarError("");
+
+    try {
+      await signInWithGoogle();
+      setGoogleCalendarAuthVersion((current) => current + 1);
+    } catch (error) {
+      console.error("Google Calendar reconnect failed", error);
+      setGoogleCalendarStatus("error");
+      setGoogleCalendarError(error.message || "Google Calendar reconnect failed.");
+    }
+  }, []);
+
+  const handleTaskSidebarResizeStart = useCallback((event) => {
+    event.preventDefault();
+
+    const startX = event.clientX;
+    const startWidth = taskSidebarWidth;
+    const maxWidthForViewport = Math.min(MAX_TASK_SIDEBAR_WIDTH, Math.max(MIN_TASK_SIDEBAR_WIDTH, window.innerWidth - 520));
+
+    setIsResizingTaskSidebar(true);
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+
+    const handlePointerMove = (moveEvent) => {
+      const nextWidth = Math.min(maxWidthForViewport, Math.max(MIN_TASK_SIDEBAR_WIDTH, startWidth + moveEvent.clientX - startX));
+      setTaskSidebarWidth(nextWidth);
+    };
+
+    const handlePointerUp = () => {
+      setIsResizingTaskSidebar(false);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+    };
+
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp);
+  }, [taskSidebarWidth]);
+
   const hoveredTask = hoveredTaskId ? tasksWithStats.find((task) => task.id === hoveredTaskId) : null;
   const hoveredTaskDeadlineKey = hoveredTaskMeta?.deadlineDateKey || hoveredTask?.deadline || null;
 
@@ -837,11 +1075,18 @@ function App() {
       header={
         <AppHeader
           user={authState.user}
+          onSignOut={handleSignOut}
         />
       }
     >
       <div className="relative flex h-full min-w-0 flex-1">
-        <div className="w-72 min-w-72 shrink-0 border-r border-[#20242A] bg-[#06080A] xl:w-80 xl:min-w-80">
+        <div
+          className="shrink-0 bg-[#06080A]"
+          style={{
+            width: `${taskSidebarWidth}px`,
+            minWidth: `${MIN_TASK_SIDEBAR_WIDTH}px`
+          }}
+        >
           <TaskPool
             tasks={visiblePoolTasks}
             workflows={appState.workflows}
@@ -859,6 +1104,27 @@ function App() {
             onHoverTask={handleHoverTask}
             onUnscheduleTask={handleUnscheduleTask}
             availableTags={availableTags}
+          />
+        </div>
+
+        <div
+          className={`group relative z-30 w-2 shrink-0 cursor-col-resize bg-[#06080A] transition-colors ${
+            isResizingTaskSidebar ? "bg-[#101820]" : "hover:bg-[#0C1116]"
+          }`}
+          onPointerDown={handleTaskSidebarResizeStart}
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="タスク一覧の幅を変更"
+        >
+          <div
+            className={`absolute inset-y-0 left-1/2 w-px -translate-x-1/2 transition-colors ${
+              isResizingTaskSidebar ? "bg-[#67D391]" : "bg-[#20242A] group-hover:bg-[#67D391]/70"
+            }`}
+          />
+          <div
+            className={`absolute left-1/2 top-1/2 h-14 w-1 -translate-x-1/2 -translate-y-1/2 rounded-full transition-colors ${
+              isResizingTaskSidebar ? "bg-[#67D391]" : "bg-transparent group-hover:bg-[#67D391]/60"
+            }`}
           />
         </div>
 
@@ -897,6 +1163,10 @@ function App() {
             setViewType={setViewType}
             scheduledTasksByDate={scheduledTasksByDate}
             tasks={boardFilteredTasks}
+            googleCalendarEvents={googleCalendarEvents}
+            googleCalendarStatus={googleCalendarStatus}
+            googleCalendarError={googleCalendarError}
+            onReconnectGoogleCalendar={handleReconnectGoogleCalendar}
             hoveredTaskId={hoveredTaskId}
             hoveredTaskDeadline={hoveredTaskDeadlineKey}
             onScheduleTask={handleScheduleTask}

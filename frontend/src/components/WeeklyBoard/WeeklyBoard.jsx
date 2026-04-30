@@ -14,6 +14,7 @@ export default function WeeklyBoard({
   baseDate,
   scheduledTasksByDate,
   tasks,
+  googleCalendarEvents = [],
   hoveredTaskId,
   hoveredTaskDeadline,
   onVisibleMonthChange,
@@ -97,6 +98,7 @@ export default function WeeklyBoard({
               mode="untimed"
               dateKey={day.dateKey}
               dayTasks={scheduledTasksByDate[day.dateKey] || []}
+              googleCalendarEvents={googleCalendarEvents.filter((event) => event.dateKey === day.dateKey)}
               hoveredTaskId={hoveredTaskId}
               hoveredTaskDeadline={hoveredTaskDeadline}
               onScheduleTask={onScheduleTask}
@@ -154,6 +156,7 @@ export default function WeeklyBoard({
               mode="timed"
               dateKey={day.dateKey}
               dayTasks={scheduledTasksByDate[day.dateKey] || []}
+              googleCalendarEvents={googleCalendarEvents.filter((event) => event.dateKey === day.dateKey)}
               tasks={tasks}
               hoveredTaskId={hoveredTaskId}
               hoveredTaskDeadline={hoveredTaskDeadline}

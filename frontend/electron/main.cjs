@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, shell } = require("electron");
+const { app, BrowserWindow, Menu, ipcMain, powerMonitor, shell } = require("electron");
 const path = require("path");
 const fs = require("fs");
 const http = require("http");
@@ -8,6 +8,11 @@ const isDev = process.env.NODE_ENV === "development";
 
 let mainWindow;
 let staticServer;
+
+function notifyRendererAppResumed() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  mainWindow.webContents.send("app-resumed");
+}
 
 const base64UrlEncode = (buffer) =>
   buffer.toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
@@ -69,6 +74,10 @@ async function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
+    minWidth: 980,
+    minHeight: 680,
+    frame: false,
+    backgroundColor: "#06080A",
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),
       contextIsolation: true,
@@ -89,15 +98,23 @@ async function createWindow() {
     const address = staticServer.address();
     mainWindow.loadURL(`http://127.0.0.1:${address.port}/`);
   }
+
+  mainWindow.on("focus", notifyRendererAppResumed);
+  mainWindow.on("show", notifyRendererAppResumed);
+  mainWindow.on("restore", notifyRendererAppResumed);
 }
 
 app.whenReady().then(() => {
+  Menu.setApplicationMenu(null);
+
   createWindow().catch((error) => {
     console.error("Failed to create window", error);
     app.quit();
   });
 
   app.on("activate", function () {
+    notifyRendererAppResumed();
+
     if (BrowserWindow.getAllWindows().length === 0) {
       createWindow().catch((error) => {
         console.error("Failed to create window", error);
@@ -105,6 +122,28 @@ app.whenReady().then(() => {
       });
     }
   });
+
+  powerMonitor.on("resume", notifyRendererAppResumed);
+});
+
+ipcMain.handle("window-minimize", () => {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  mainWindow.minimize();
+});
+
+ipcMain.handle("window-toggle-maximize", () => {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  if (mainWindow.isMaximized()) {
+    mainWindow.unmaximize();
+    return;
+  }
+
+  mainWindow.maximize();
+});
+
+ipcMain.handle("window-close", () => {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  mainWindow.close();
 });
 
 app.on("window-all-closed", function () {
@@ -228,11 +267,12 @@ ipcMain.handle("google-oauth-sign-in", async (event, { clientId, clientSecret })
   authUrl.searchParams.set("client_id", clientId);
   authUrl.searchParams.set("redirect_uri", redirectUri);
   authUrl.searchParams.set("response_type", "code");
-  authUrl.searchParams.set("scope", "openid email profile");
+  authUrl.searchParams.set("scope", "openid email profile https://www.googleapis.com/auth/calendar.readonly");
   authUrl.searchParams.set("code_challenge", codeChallenge);
   authUrl.searchParams.set("code_challenge_method", "S256");
   authUrl.searchParams.set("state", state);
-  authUrl.searchParams.set("prompt", "select_account");
+  authUrl.searchParams.set("prompt", "consent select_account");
+  authUrl.searchParams.set("include_granted_scopes", "true");
 
   await shell.openExternal(authUrl.toString());
 

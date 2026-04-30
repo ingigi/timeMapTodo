@@ -8,6 +8,8 @@ const HOURS = Array.from({ length: 24 }, (_, index) => `${String(index).padStart
 const HOUR_HEIGHT = 72;
 const SNAP_MINUTES = 15;
 const MIN_DURATION_MINUTES = 15;
+const MIN_TEXT_COLLISION_MINUTES = 34;
+const MAX_TEXT_COLLISION_MINUTES = 110;
 
 const timeToMinutes = (time) => {
   if (!time) return 0;
@@ -20,6 +22,95 @@ const minutesToTime = (minutes) => {
   const hours = Math.floor(bounded / 60);
   const mins = bounded % 60;
   return `${String(hours).padStart(2, "0")}:${String(mins).padStart(2, "0")}`;
+};
+
+const intervalsOverlap = (left, right) => left.startMinutes < right.endMinutes && right.startMinutes < left.endMinutes;
+
+const getLayoutTitle = (item) => item.event?.title || item.task?.title || item.title || "";
+
+const getTextCollisionMinutes = (item) => {
+  const durationMinutes = Math.max(MIN_DURATION_MINUTES, item.endMinutes - item.startMinutes);
+  const titleLength = getLayoutTitle(item).length;
+  const estimatedMinutes = MIN_TEXT_COLLISION_MINUTES + Math.ceil(titleLength / 8) * 10;
+  return Math.min(durationMinutes, Math.min(MAX_TEXT_COLLISION_MINUTES, estimatedMinutes));
+};
+
+const textRegionsOverlap = (left, right) => {
+  const leftTextEnd = Math.min(left.endMinutes, left.startMinutes + getTextCollisionMinutes(left));
+  const rightTextEnd = Math.min(right.endMinutes, right.startMinutes + getTextCollisionMinutes(right));
+  return left.startMinutes < rightTextEnd && right.startMinutes < leftTextEnd;
+};
+
+const layoutTimedItems = (items) => {
+  const sortedItems = [...items].sort((left, right) => {
+    if (left.startMinutes !== right.startMinutes) return left.startMinutes - right.startMinutes;
+    return right.endMinutes - left.endMinutes;
+  });
+  const groups = [];
+  let currentGroup = [];
+  let currentGroupEnd = -1;
+
+  sortedItems.forEach((item) => {
+    if (!currentGroup.length || item.startMinutes < currentGroupEnd) {
+      currentGroup.push(item);
+      currentGroupEnd = Math.max(currentGroupEnd, item.endMinutes);
+      return;
+    }
+
+    groups.push(currentGroup);
+    currentGroup = [item];
+    currentGroupEnd = item.endMinutes;
+  });
+
+  if (currentGroup.length) groups.push(currentGroup);
+
+  return groups.flatMap((group) => {
+    const laneEndMinutes = [];
+    const withLanes = group.map((item) => {
+      let laneIndex = laneEndMinutes.findIndex((endMinutes) => endMinutes <= item.startMinutes);
+      if (laneIndex === -1) {
+        laneIndex = laneEndMinutes.length;
+        laneEndMinutes.push(item.endMinutes);
+      } else {
+        laneEndMinutes[laneIndex] = item.endMinutes;
+      }
+
+      return { ...item, laneIndex };
+    });
+
+    const laneCount = laneEndMinutes.length;
+
+    return withLanes.map((item) => {
+      let renderLaneStart = item.laneIndex;
+      let renderLaneEnd = item.laneIndex + 1;
+
+      for (let laneIndex = item.laneIndex - 1; laneIndex >= 0; laneIndex -= 1) {
+        const laneTextIsBlocked = withLanes.some(
+          (candidate) => candidate.laneIndex === laneIndex && intervalsOverlap(item, candidate) && textRegionsOverlap(item, candidate)
+        );
+
+        if (laneTextIsBlocked) break;
+        renderLaneStart = laneIndex;
+      }
+
+      for (let laneIndex = item.laneIndex + 1; laneIndex < laneCount; laneIndex += 1) {
+        const laneTextIsBlocked = withLanes.some(
+          (candidate) => candidate.laneIndex === laneIndex && intervalsOverlap(item, candidate) && textRegionsOverlap(item, candidate)
+        );
+
+        if (laneTextIsBlocked) break;
+        renderLaneEnd = laneIndex + 1;
+      }
+
+      return {
+        ...item,
+        laneCount,
+        renderLaneCount: laneCount,
+        renderLaneIndex: renderLaneStart,
+        renderLaneSpan: renderLaneEnd - renderLaneStart
+      };
+    });
+  });
 };
 
 function PlacementPreview({ preview }) {
@@ -60,10 +151,29 @@ function PlacementPreview({ preview }) {
   );
 }
 
+function GoogleCalendarEventBlock({ event, variant = "timed", style }) {
+  const timeLabel = event.allDay ? "All day" : `${event.startTime}${event.endTime ? `-${event.endTime}` : ""}`;
+
+  return (
+    <div
+      className={`overflow-hidden rounded-lg border border-[#334155] bg-[#111827] px-2 py-1.5 text-[#CBD5E1] shadow-[0_10px_24px_rgba(0,0,0,0.18)] ${
+        variant === "untimed" ? "min-h-[28px]" : "absolute"
+      }`}
+      style={style}
+    >
+      <div className="min-w-0">
+        <div className="break-words text-[11px] font-bold leading-4 text-[#E2E8F0]">{event.title}</div>
+        <div className="break-words text-[9px] font-semibold leading-3 text-[#94A3B8]">{timeLabel}</div>
+      </div>
+    </div>
+  );
+}
+
 export default function DayColumn({
   mode,
   dateKey,
   dayTasks,
+  googleCalendarEvents = [],
   hoveredTaskId,
   hoveredTaskDeadline,
   onScheduleTask,
@@ -79,6 +189,34 @@ export default function DayColumn({
   const dropPalette = getTaskPalette(dragColor);
   const untimedTasks = dayTasks.filter((task) => !task.scheduledTime);
   const timedTasks = dayTasks.filter((task) => task.scheduledTime);
+  const allDayGoogleEvents = googleCalendarEvents.filter((event) => event.allDay);
+  const timedGoogleEvents = googleCalendarEvents.filter((event) => !event.allDay);
+  const timedLayoutItems = layoutTimedItems([
+    ...timedGoogleEvents.map((event) => {
+      const startMinutes = timeToMinutes(event.startTime);
+      const duration = Math.max(MIN_DURATION_MINUTES, Number(event.durationMinutes) || 60);
+      return {
+        id: `google-${event.id}`,
+        type: "google",
+        event,
+        startMinutes,
+        endMinutes: Math.min(24 * 60, startMinutes + duration),
+        durationMinutes: duration
+      };
+    }),
+    ...timedTasks.map((task) => {
+      const startMinutes = timeToMinutes(task.scheduledTime);
+      const duration = Math.max(MIN_DURATION_MINUTES, Number(task.scheduledDurationMinutes) || 60);
+      return {
+        id: `task-${task.id}`,
+        type: "task",
+        task,
+        startMinutes,
+        endMinutes: Math.min(24 * 60, startMinutes + duration),
+        durationMinutes: duration
+      };
+    })
+  ]);
   const isDeadlineDay = hoveredTaskDeadline === dateKey;
 
   const readDragPayload = (event) => {
@@ -205,6 +343,10 @@ export default function DayColumn({
         onDrop={(event) => handleDrop(event)}
       >
         <div className="space-y-1.5">
+          {allDayGoogleEvents.slice(0, 3).map((event) => (
+            <GoogleCalendarEventBlock key={event.id} event={event} variant="untimed" />
+          ))}
+
           {untimedTasks.slice(0, 4).map((task) => (
             <AssignedBlock
               key={task.id}
@@ -253,31 +395,38 @@ export default function DayColumn({
       <div className="pointer-events-none absolute inset-0">
         {placementPreview ? <PlacementPreview preview={placementPreview} /> : null}
 
-        {timedTasks.map((task) => {
-          const startMinutes = timeToMinutes(task.scheduledTime);
-          const duration = Math.max(MIN_DURATION_MINUTES, Number(task.scheduledDurationMinutes) || 60);
-          const top = (startMinutes / 60) * HOUR_HEIGHT;
-          const height = Math.max(38, (duration / 60) * HOUR_HEIGHT - 4);
+        {timedLayoutItems.map((item) => {
+          const top = (item.startMinutes / 60) * HOUR_HEIGHT;
+          const height = Math.max(38, (item.durationMinutes / 60) * HOUR_HEIGHT - 4);
+          const leftPercent = (item.renderLaneIndex / item.renderLaneCount) * 100;
+          const widthPercent = (item.renderLaneSpan / item.renderLaneCount) * 100;
+          const overlapsNextLane = item.renderLaneIndex + item.renderLaneSpan < item.renderLaneCount;
+          const overlapPixels = overlapsNextLane ? 28 : 0;
+          const itemStyle = {
+            top: `${top + 2}px`,
+            left: `calc(${leftPercent}% + 6px)`,
+            width: `calc(${widthPercent}% - 12px + ${overlapPixels}px)`,
+            height: `${height}px`,
+            zIndex: 20 + item.laneIndex
+          };
+
+          if (item.type === "google") {
+            return <GoogleCalendarEventBlock key={item.id} event={item.event} style={itemStyle} />;
+          }
 
           return (
             <AssignedBlock
-              key={task.id}
-              task={task}
+              key={item.id}
+              task={item.task}
               dateKey={dateKey}
               variant="timed"
-              isRelated={hoveredTaskId === task.id}
+              isRelated={hoveredTaskId === item.task.id}
               onUnscheduleTask={onUnscheduleTask}
               onToggleTaskComplete={onToggleTaskComplete}
               onHoverTask={onHoverTask}
               onOpenDetail={onOpenDetail}
-              onResizeTask={(nextDurationMinutes, nextStartTime) => handleResizeTask(task, nextDurationMinutes, nextStartTime)}
-              style={{
-                position: "absolute",
-                top: `${top + 2}px`,
-                left: "6px",
-                right: "6px",
-                height: `${height}px`
-              }}
+              onResizeTask={(nextDurationMinutes, nextStartTime) => handleResizeTask(item.task, nextDurationMinutes, nextStartTime)}
+              style={itemStyle}
             />
           );
         })}

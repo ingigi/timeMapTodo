@@ -181,15 +181,15 @@ export default function AssignedBlock({
         )}
       >
         {isTimed ? (
-          <div className="grid min-h-0 grid-cols-[16px_minmax(0,1fr)] grid-rows-[16px_14px] items-start gap-x-1.5">
+          <div className="grid min-h-0 grid-cols-[16px_minmax(0,1fr)] items-start gap-x-1.5 gap-y-0.5">
             {renderCheckButton("h-3.5 w-3.5")}
             <div
-              className={clsx("min-w-0 truncate text-[12px] font-bold leading-4", task.completed && "line-through")}
+              className={clsx("min-w-0 break-words text-[12px] font-bold leading-4", task.completed && "line-through")}
               style={{ color: task.completed ? palette.mutedText : palette.text }}
             >
               {task.title || "Untitled"}
             </div>
-            <div className="col-span-2 max-w-full truncate text-[10.5px] font-bold leading-3 text-[#B8C0CC]">{scheduledTimeRange}</div>
+            <div className="col-span-2 max-w-full break-words text-[10.5px] font-bold leading-3 text-[#B8C0CC]">{scheduledTimeRange}</div>
           </div>
         ) : (
           <div className={clsx("flex min-h-0 items-start justify-between", isUntimed ? "gap-1.5" : "gap-3")}>

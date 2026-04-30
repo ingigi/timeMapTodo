@@ -21,6 +21,9 @@ const FIREBASE_ENV_KEYS = [
 const APP_STATE_COLLECTION = "timemaptodoWorkspaces";
 const USERS_COLLECTION = "users";
 const DEFAULT_WORKSPACE_ID = "default";
+const GOOGLE_CALENDAR_SCOPE = "https://www.googleapis.com/auth/calendar.readonly";
+
+let googleCalendarAccessToken = null;
 
 const getEnv = () => import.meta.env || {};
 
@@ -114,25 +117,39 @@ export const createAccountWithEmail = (email, password) => {
   return createUserWithEmailAndPassword(getAuthClient(), email, password);
 };
 
+const storeGoogleCalendarAccessToken = (accessToken) => {
+  googleCalendarAccessToken = accessToken || null;
+};
+
+export const getGoogleCalendarAccessToken = () => googleCalendarAccessToken;
+
 export const signInWithGoogle = () => {
   const desktopClientId = getGoogleDesktopClientId();
   const desktopClientSecret = getGoogleDesktopClientSecret();
 
   if (desktopClientId && typeof window !== "undefined" && window.api?.signInWithGoogleExternal) {
     return window.api.signInWithGoogleExternal(desktopClientId, desktopClientSecret).then(({ idToken, accessToken }) => {
+      storeGoogleCalendarAccessToken(accessToken);
       const credential = GoogleAuthProvider.credential(idToken, accessToken);
       return signInWithCredential(getAuthClient(), credential);
     });
   }
 
   const provider = new GoogleAuthProvider();
+  provider.addScope(GOOGLE_CALENDAR_SCOPE);
   provider.setCustomParameters({
-    prompt: "select_account"
+    prompt: "consent select_account",
+    include_granted_scopes: "true"
   });
-  return signInWithPopup(getAuthClient(), provider);
+  return signInWithPopup(getAuthClient(), provider).then((result) => {
+    const credential = GoogleAuthProvider.credentialFromResult(result);
+    storeGoogleCalendarAccessToken(credential?.accessToken || null);
+    return result;
+  });
 };
 
 export const signOutFirebase = () => {
+  storeGoogleCalendarAccessToken(null);
   return signOut(getAuthClient());
 };
 

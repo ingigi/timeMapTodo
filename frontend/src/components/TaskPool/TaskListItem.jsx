@@ -129,14 +129,14 @@ export default function TaskListItem({
         <div className="mb-1 flex flex-wrap items-center gap-2">
           <span className={clsx("rounded-full px-2 py-0.5 text-[11px] font-medium", STATUS_STYLES[status])}>{STATUS_LABELS[status]}</span>
           <span className="rounded-full bg-[#161A1F] px-2 py-0.5 text-[11px] font-medium text-[#8B949E]">
-            \u672a\u914d\u7f6e
+            未配置
           </span>
           {sourceWorkflowId ? (
             <span className="rounded-full bg-[#161A1F] px-2 py-0.5 text-[11px] font-medium text-[#8B949E]">
-              \u81ea\u52d5\u8ffd\u52a0
+              自動追加
             </span>
           ) : null}
-          {deadline ? <span className="text-[12px] text-[#9CA3AF]">\u671f\u9650 {deadline}</span> : null}
+          {deadline ? <span className="text-[12px] text-[#9CA3AF]">期限 {deadline}</span> : null}
         </div>
 
         {isEditingTitle ? (
@@ -152,7 +152,7 @@ export default function TaskListItem({
                 event.currentTarget.blur();
               }
             }}
-            placeholder="\u30bf\u30b9\u30af\u540d\u3092\u5165\u529b"
+            placeholder="タスク名を入力"
             className="w-full select-text border-none bg-transparent text-sm font-semibold text-[#F7F7F8] outline-none placeholder:text-[#4B5563]"
           />
         ) : (
@@ -160,7 +160,7 @@ export default function TaskListItem({
             className={clsx("truncate text-sm font-semibold text-[#F7F7F8]", isCompleted && "line-through")}
             style={isCompleted ? { color: palette.mutedText } : undefined}
           >
-            {title || "\u7121\u984c\u306e\u30bf\u30b9\u30af"}
+            {title || "無題のタスク"}
           </div>
         )}
       </div>
@@ -171,7 +171,7 @@ export default function TaskListItem({
           onDelete(id);
         }}
         className="rounded-lg p-2 text-[#8B949E] opacity-0 transition-all hover:bg-red-500/10 hover:text-red-300 group-hover:opacity-100"
-        title="\u524a\u9664"
+        title="削除"
       >
         <Trash2 className="h-3.5 w-3.5" />
       </button>

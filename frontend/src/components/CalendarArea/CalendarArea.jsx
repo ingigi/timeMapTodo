@@ -11,6 +11,10 @@ export default function CalendarArea({
   setViewType,
   scheduledTasksByDate,
   tasks,
+  googleCalendarEvents = [],
+  googleCalendarStatus = "idle",
+  googleCalendarError = "",
+  onReconnectGoogleCalendar,
   hoveredTaskId,
   hoveredTaskDeadline,
   onScheduleTask,
@@ -102,7 +106,24 @@ export default function CalendarArea({
           </div>
         </div>
 
-        <div className="shrink-0 text-sm font-semibold text-[#A8B2C0]">{visibleMonthLabel}</div>
+        <div className="flex shrink-0 items-center gap-3 text-sm font-semibold text-[#A8B2C0]">
+          {googleCalendarStatus === "loading" ? <span className="text-[#748092]">Google Calendar syncing...</span> : null}
+          {googleCalendarStatus === "error" ? (
+            <span className="max-w-[360px] truncate text-[#FCA5A5]" title={googleCalendarError || "Google Calendar unavailable"}>
+              {googleCalendarError || "Google Calendar unavailable"}
+            </span>
+          ) : null}
+          {googleCalendarStatus === "needs-sign-in" ? (
+            <button
+              type="button"
+              onClick={onReconnectGoogleCalendar}
+              className="rounded-lg border border-[#D9A441]/40 px-3 py-1.5 text-xs font-semibold text-[#FBBF24] transition-colors hover:bg-[#D9A441]/10"
+            >
+              Connect Google Calendar
+            </button>
+          ) : null}
+          <span>{visibleMonthLabel}</span>
+        </div>
       </div>
 
       <div className="relative flex-1 overflow-hidden">
@@ -111,6 +132,7 @@ export default function CalendarArea({
             baseDate={baseDate}
             scheduledTasksByDate={scheduledTasksByDate}
             tasks={tasks}
+            googleCalendarEvents={googleCalendarEvents}
             hoveredTaskId={hoveredTaskId}
             hoveredTaskDeadline={hoveredTaskDeadline || hoveredTask?.deadline || null}
             onVisibleMonthChange={setVisibleMonthLabel}
