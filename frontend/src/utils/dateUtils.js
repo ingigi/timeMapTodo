@@ -1,17 +1,16 @@
-export const formatDate = (date) => {
+﻿export const formatDate = (date) => {
   const y = date.getFullYear();
   const m = String(date.getMonth() + 1).padStart(2, "0");
   const d = String(date.getDate()).padStart(2, "0");
   return `${y}-${m}-${d}`;
 };
 
-export const formatMonthLabel = (date) => `${date.getFullYear()}年${date.getMonth() + 1}月`;
+export const formatMonthLabel = (date) => `${date.getFullYear()}\u5e74${date.getMonth() + 1}\u6708`;
 
 export const startOfWeek = (date) => {
   const d = new Date(date);
   const day = d.getDay();
-  const diff = d.getDate() - day + (day === 0 ? -6 : 1);
-  return new Date(d.setDate(diff));
+  return new Date(d.setDate(d.getDate() - day));
 };
 
 export const addWeeks = (date, weeks) => {
@@ -30,7 +29,7 @@ export const subWeeks = (date, weeks) => addWeeks(date, -weeks);
 
 export const subMonths = (date, months) => addMonths(date, -months);
 
-const WEEKDAY_LABELS = ["月", "火", "水", "木", "金", "土", "日"];
+export const WEEKDAY_LABELS = ["\u65e5", "\u6708", "\u706b", "\u6c34", "\u6728", "\u91d1", "\u571f"];
 
 export const getWeekDates = (baseDate) => {
   const start = startOfWeek(baseDate);
@@ -54,11 +53,10 @@ export const getDateRangeDates = (centerDate, daysBefore = 15, daysAfter = 15) =
   return Array.from({ length: total }, (_, idx) => {
     const current = new Date(start);
     current.setDate(start.getDate() + idx);
-    const weekdayIndex = current.getDay() === 0 ? 6 : current.getDay() - 1;
 
     return {
       dateKey: formatDate(current),
-      dayName: WEEKDAY_LABELS[weekdayIndex],
+      dayName: WEEKDAY_LABELS[current.getDay()],
       dateNum: current.getDate(),
       monthLabel: formatMonthLabel(current),
       isToday: formatDate(current) === formatDate(new Date())
@@ -74,18 +72,17 @@ export const getMonthDates = (baseDate) => {
   const startDate = startOfWeek(firstDay);
 
   const endDate = new Date(lastDay);
-  if (endDate.getDay() !== 0) {
-    endDate.setDate(endDate.getDate() + (7 - endDate.getDay()));
+  if (endDate.getDay() !== 6) {
+    endDate.setDate(endDate.getDate() + ((6 - endDate.getDay() + 7) % 7));
   }
 
   const dates = [];
   let current = new Date(startDate);
 
   while (current <= endDate) {
-    const weekdayIndex = current.getDay() === 0 ? 6 : current.getDay() - 1;
     dates.push({
       dateKey: formatDate(current),
-      dayName: WEEKDAY_LABELS[weekdayIndex],
+      dayName: WEEKDAY_LABELS[current.getDay()],
       dateNum: current.getDate(),
       isToday: formatDate(current) === formatDate(new Date()),
       isCurrentMonth: current.getMonth() === m
@@ -95,3 +92,7 @@ export const getMonthDates = (baseDate) => {
 
   return dates;
 };
+
+
+
+

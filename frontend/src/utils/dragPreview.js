@@ -1,90 +1,82 @@
 import { getTaskPalette } from "./taskColors";
 
-export function attachDragPreview(event, { title, color, completed = false } = {}) {
+const prepareClone = (sourceElement) => {
+  const rect = sourceElement.getBoundingClientRect();
+  const clone = sourceElement.cloneNode(true);
+
+  clone.removeAttribute("id");
+  clone.setAttribute("aria-hidden", "true");
+  clone.style.position = "fixed";
+  clone.style.top = "-9999px";
+  clone.style.left = "-9999px";
+  clone.style.width = `${rect.width}px`;
+  clone.style.height = `${rect.height}px`;
+  clone.style.pointerEvents = "none";
+  clone.style.transform = "none";
+  clone.style.opacity = "1";
+  clone.style.margin = "0";
+  clone.style.zIndex = "-1";
+
+  clone.querySelectorAll("[id]").forEach((node) => node.removeAttribute("id"));
+  clone.querySelectorAll("button, input, textarea, select").forEach((node) => {
+    node.setAttribute("tabindex", "-1");
+  });
+
+  return { clone, rect };
+};
+
+const createFallbackPreview = ({ title, color, completed = false } = {}) => {
   const palette = getTaskPalette(color);
   const preview = document.createElement("div");
   preview.style.position = "fixed";
   preview.style.top = "-9999px";
   preview.style.left = "-9999px";
-  preview.style.width = "176px";
-  preview.style.minHeight = "132px";
-  preview.style.padding = "12px";
-  preview.style.display = "flex";
-  preview.style.flexDirection = "column";
-  preview.style.justifyContent = "space-between";
-  preview.style.borderRadius = "18px";
+  preview.style.width = "220px";
+  preview.style.minHeight = "44px";
+  preview.style.padding = "10px 12px";
+  preview.style.borderRadius = "12px";
   preview.style.border = `1px solid ${palette.border}`;
-  preview.style.background = palette.surfaceStrong;
-  preview.style.boxShadow = `0 8px 20px ${palette.shadow}`;
+  preview.style.background = completed ? palette.completedSurface : palette.surface;
+  preview.style.boxShadow = `0 18px 38px ${palette.shadow}`;
   preview.style.pointerEvents = "none";
   preview.style.overflow = "hidden";
   preview.style.fontFamily = "Inter, system-ui, -apple-system, sans-serif";
+  preview.style.fontSize = "13px";
+  preview.style.fontWeight = "700";
+  preview.style.lineHeight = "18px";
+  preview.style.color = completed ? palette.mutedText : palette.text;
+  preview.textContent = title || "Task";
+  if (completed) preview.style.textDecoration = "line-through";
 
-  const topRow = document.createElement("div");
-  topRow.style.display = "flex";
-  topRow.style.alignItems = "flex-start";
-  topRow.style.justifyContent = "space-between";
-  topRow.style.gap = "12px";
+  return { clone: preview, rect: { left: 0, top: 0, width: 220, height: 44 } };
+};
 
-  const titleNode = document.createElement("div");
-  titleNode.textContent = title || "Task";
-  titleNode.style.fontSize = "14px";
-  titleNode.style.lineHeight = "22px";
-  titleNode.style.fontWeight = "600";
-  titleNode.style.color = "#0f172a";
-  titleNode.style.wordBreak = "break-word";
-  titleNode.style.flex = "1";
+export function attachDragPreview(event, options = {}) {
+  if (options.hideNativePreview) {
+    const transparentPreview = document.createElement("div");
+    transparentPreview.style.position = "fixed";
+    transparentPreview.style.top = "-9999px";
+    transparentPreview.style.left = "-9999px";
+    transparentPreview.style.width = "1px";
+    transparentPreview.style.height = "1px";
+    transparentPreview.style.opacity = "0";
+    document.body.appendChild(transparentPreview);
+    event.dataTransfer.setDragImage(transparentPreview, 0, 0);
 
-  const close = document.createElement("div");
-  close.style.display = "inline-flex";
-  close.style.alignItems = "center";
-  close.style.justifyContent = "center";
-  close.style.width = "22px";
-  close.style.height = "22px";
-  close.style.borderRadius = "9999px";
-  close.style.color = "#94a3b8";
-  close.style.flex = "0 0 auto";
-  close.textContent = "×";
+    return () => {
+      transparentPreview.remove();
+    };
+  }
 
-  topRow.appendChild(titleNode);
-  topRow.appendChild(close);
+  const sourceElement = options.sourceElement instanceof Element ? options.sourceElement : event.currentTarget;
+  const { clone, rect } = sourceElement instanceof Element ? prepareClone(sourceElement) : createFallbackPreview(options);
+  const offsetX = Math.max(0, Math.min(rect.width, event.clientX - rect.left));
+  const offsetY = Math.max(0, Math.min(rect.height, event.clientY - rect.top));
 
-  const footer = document.createElement("div");
-  footer.style.display = "flex";
-  footer.style.alignItems = "center";
-  footer.style.justifyContent = "space-between";
-  footer.style.gap = "12px";
-
-  const colorBar = document.createElement("div");
-  colorBar.style.height = "6px";
-  colorBar.style.width = "52px";
-  colorBar.style.borderRadius = "999px";
-  colorBar.style.background = palette.base;
-
-  const button = document.createElement("div");
-  button.style.display = "inline-flex";
-  button.style.alignItems = "center";
-  button.style.gap = "4px";
-  button.style.borderRadius = "9999px";
-  button.style.border = `1px solid ${completed ? palette.completedBorder : "rgb(226 232 240)"}`;
-  button.style.background = completed ? "white" : "rgba(255,255,255,0.8)";
-  button.style.color = completed ? palette.text : "#334155";
-  button.style.padding = "4px 10px";
-  button.style.fontSize = "10px";
-  button.style.fontWeight = "600";
-  button.style.lineHeight = "1";
-  button.style.whiteSpace = "nowrap";
-  button.textContent = completed ? "↺ 戻す" : "✓ 完了";
-
-  footer.appendChild(colorBar);
-  footer.appendChild(button);
-
-  preview.appendChild(topRow);
-  preview.appendChild(footer);
-  document.body.appendChild(preview);
-  event.dataTransfer.setDragImage(preview, 22, 18);
+  document.body.appendChild(clone);
+  event.dataTransfer.setDragImage(clone, offsetX, offsetY);
 
   return () => {
-    preview.remove();
+    clone.remove();
   };
 }

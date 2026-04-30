@@ -1,4 +1,4 @@
-let currentDrag = null;
+﻿let currentDrag = null;
 
 export function setCurrentDrag(payload) {
   currentDrag = payload;
@@ -11,3 +11,7 @@ export function getCurrentDrag() {
 export function clearCurrentDrag() {
   currentDrag = null;
 }
+
+
+
+

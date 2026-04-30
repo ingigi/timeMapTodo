@@ -1,5 +1,5 @@
-const DEFAULT_COLOR = "#94a3b8";
-const DEADLINE_BASE = "#ef4444";
+﻿const DEFAULT_COLOR = "#94a3b8";
+const DEADLINE_BASE = "#f59e0b";
 
 function normalizeHex(hex) {
   if (!hex || typeof hex !== "string") return DEFAULT_COLOR;
@@ -50,12 +50,17 @@ export function getTaskPalette(color) {
 export function getDeadlinePalette() {
   return {
     base: DEADLINE_BASE,
-    surface: "rgba(239, 68, 68, 0.06)",
-    surfaceStrong: "rgba(239, 68, 68, 0.12)",
-    border: "rgba(239, 68, 68, 0.28)",
-    borderStrong: "rgba(239, 68, 68, 0.62)",
-    text: "#b91c1c",
-    badgeStrong: "rgba(239, 68, 68, 0.14)",
-    shadow: "rgba(239, 68, 68, 0.14)"
+    surface: "rgba(245, 158, 11, 0.075)",
+    surfaceStrong: "rgba(245, 158, 11, 0.14)",
+    border: "rgba(245, 158, 11, 0.26)",
+    borderStrong: "rgba(245, 158, 11, 0.55)",
+    text: "#FBBF24",
+    badgeStrong: "#F59E0B",
+    badgeText: "#1C1203",
+    shadow: "rgba(245, 158, 11, 0.18)"
   };
 }
+
+
+
+

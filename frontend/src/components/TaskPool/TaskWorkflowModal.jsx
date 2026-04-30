@@ -1,4 +1,4 @@
-import clsx from "clsx";
+﻿import clsx from "clsx";
 import { createPortal } from "react-dom";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
@@ -12,17 +12,18 @@ import {
   Sparkles,
   X
 } from "lucide-react";
+import { getAnchoredPopoverPlacement } from "../../utils/popoverPosition";
 
 const COLOR_OPTIONS = ["#5B8DEF", "#4FB7A8", "#D9A441", "#8A7FD1", "#7FA36B", "#C97B63", "#5FA3B7", "#C27A92"];
 
 const WEEKDAY_OPTIONS = [
-  { value: 0, label: "日曜" },
-  { value: 1, label: "月曜" },
-  { value: 2, label: "火曜" },
-  { value: 3, label: "水曜" },
-  { value: 4, label: "木曜" },
-  { value: 5, label: "金曜" },
-  { value: 6, label: "土曜" }
+  { value: 0, label: "日曜日" },
+  { value: 1, label: "月曜日" },
+  { value: 2, label: "火曜日" },
+  { value: 3, label: "水曜日" },
+  { value: 4, label: "木曜日" },
+  { value: 5, label: "金曜日" },
+  { value: 6, label: "土曜日" }
 ];
 
 const FREQUENCY_OPTIONS = [
@@ -32,7 +33,7 @@ const FREQUENCY_OPTIONS = [
 ];
 
 const DUE_OFFSET_PRESETS = [0, 1, 3, 7, 14];
-const DAY_LABELS = ["月", "火", "水", "木", "金", "土", "日"];
+const DAY_LABELS = ["日", "月", "火", "水", "木", "金", "土"];
 
 const formatToday = () => {
   const date = new Date();
@@ -87,7 +88,7 @@ const splitTags = (value) =>
 function PickerField({ label, children }) {
   return (
     <label className="block">
-      <div className="mb-1.5 text-xs font-medium text-slate-600">{label}</div>
+      <div className="mb-1.5 text-xs font-medium text-[#A1A1AA]">{label}</div>
       {children}
     </label>
   );
@@ -107,7 +108,7 @@ export default function TaskWorkflowModal({ availableTags = [], onSave, onClose 
   const [isFrequencyMenuOpen, setIsFrequencyMenuOpen] = useState(false);
   const [isDatePickerOpen, setIsDatePickerOpen] = useState(false);
   const [datePickerMonth, setDatePickerMonth] = useState(() => startOfMonth(parseDateValue(formatToday()) || new Date()));
-  const [frequencyMenuDirection, setFrequencyMenuDirection] = useState("down");
+  const [frequencyMenuPosition, setFrequencyMenuPosition] = useState(null);
   const [datePickerPosition, setDatePickerPosition] = useState(null);
   const frequencyButtonRef = useRef(null);
   const frequencyMenuRef = useRef(null);
@@ -125,7 +126,7 @@ export default function TaskWorkflowModal({ availableTags = [], onSave, onClose 
 
   const calendarDays = useMemo(() => {
     const monthStart = startOfMonth(datePickerMonth);
-    const startWeekday = (monthStart.getDay() + 6) % 7;
+    const startWeekday = monthStart.getDay();
     const gridStart = new Date(monthStart);
     gridStart.setDate(gridStart.getDate() - startWeekday);
 
@@ -216,10 +217,7 @@ export default function TaskWorkflowModal({ availableTags = [], onSave, onClose 
 
     const frame = requestAnimationFrame(() => {
       if (!frequencyButtonRef.current) return;
-      const rect = frequencyButtonRef.current.getBoundingClientRect();
-      const spaceBelow = window.innerHeight - rect.bottom;
-      const spaceAbove = rect.top;
-      setFrequencyMenuDirection(spaceBelow < 240 && spaceAbove > spaceBelow ? "up" : "down");
+      setFrequencyMenuPosition(getAnchoredPopoverPlacement(frequencyButtonRef.current, { width: 240, height: 176 }));
     });
 
     return () => cancelAnimationFrame(frame);
@@ -228,22 +226,7 @@ export default function TaskWorkflowModal({ availableTags = [], onSave, onClose 
   useLayoutEffect(() => {
     if (!isDatePickerOpen || !startDateButtonRef.current) return;
 
-    const rect = startDateButtonRef.current.getBoundingClientRect();
-    const pickerWidth = 332;
-    const pickerHeight = 412;
-    const spaceBelow = window.innerHeight - rect.bottom;
-    const spaceAbove = rect.top;
-    const openUp = spaceBelow < pickerHeight && spaceAbove > spaceBelow;
-    const top = openUp
-      ? Math.max(12, rect.top - 16 - pickerHeight)
-      : Math.min(window.innerHeight - pickerHeight - 12, rect.bottom + 12);
-    const left = Math.min(Math.max(12, rect.left), window.innerWidth - pickerWidth - 12);
-
-    setDatePickerPosition({
-      top,
-      left,
-      width: Math.min(pickerWidth, window.innerWidth - 24)
-    });
+    setDatePickerPosition(getAnchoredPopoverPlacement(startDateButtonRef.current, { width: 320, height: 396 }));
   }, [isDatePickerOpen, datePickerMonth, startDate]);
 
   useEffect(() => {
@@ -251,22 +234,7 @@ export default function TaskWorkflowModal({ availableTags = [], onSave, onClose 
 
     const handleReposition = () => {
       if (!startDateButtonRef.current) return;
-      const rect = startDateButtonRef.current.getBoundingClientRect();
-      const pickerWidth = 332;
-      const pickerHeight = 412;
-      const spaceBelow = window.innerHeight - rect.bottom;
-      const spaceAbove = rect.top;
-      const openUp = spaceBelow < pickerHeight && spaceAbove > spaceBelow;
-      const top = openUp
-        ? Math.max(12, rect.top - 16 - pickerHeight)
-        : Math.min(window.innerHeight - pickerHeight - 12, rect.bottom + 12);
-      const left = Math.min(Math.max(12, rect.left), window.innerWidth - pickerWidth - 12);
-
-      setDatePickerPosition({
-        top,
-        left,
-        width: Math.min(pickerWidth, window.innerWidth - 24)
-      });
+      setDatePickerPosition(getAnchoredPopoverPlacement(startDateButtonRef.current, { width: 320, height: 396 }));
     };
 
     window.addEventListener("resize", handleReposition);
@@ -277,42 +245,97 @@ export default function TaskWorkflowModal({ availableTags = [], onSave, onClose 
     };
   }, [isDatePickerOpen]);
 
+  useEffect(() => {
+    if (!isFrequencyMenuOpen) return;
+
+    const handleReposition = () => {
+      if (!frequencyButtonRef.current) return;
+      setFrequencyMenuPosition(getAnchoredPopoverPlacement(frequencyButtonRef.current, { width: 240, height: 176 }));
+    };
+
+    window.addEventListener("resize", handleReposition);
+    window.addEventListener("scroll", handleReposition, true);
+    return () => {
+      window.removeEventListener("resize", handleReposition);
+      window.removeEventListener("scroll", handleReposition, true);
+    };
+  }, [isFrequencyMenuOpen]);
+
+  const frequencyMenu =
+    isFrequencyMenuOpen && frequencyMenuPosition
+      ? createPortal(
+          <div
+            ref={frequencyMenuRef}
+            className="fixed z-[70] overflow-hidden rounded-2xl border border-[#20242A] bg-[#111418] p-3 shadow-[0_24px_60px_rgba(0,0,0,0.48)]"
+            style={{
+              top: `${frequencyMenuPosition.top}px`,
+              left: `${frequencyMenuPosition.left}px`,
+              width: `${frequencyMenuPosition.width}px`,
+              maxHeight: `${frequencyMenuPosition.maxHeight}px`
+            }}
+          >
+            <div className="mb-2 flex items-center gap-2 text-[12px] font-bold uppercase tracking-[0.14em] text-[#5ED890]">
+              <span className="h-2 w-2 rounded-full bg-[#5ED890]" />
+              Frequency
+            </div>
+            {FREQUENCY_OPTIONS.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                onClick={() => {
+                  setFrequency(option.value);
+                  setIsFrequencyMenuOpen(false);
+                }}
+                className={clsx(
+                  "mb-1 w-full rounded-xl px-3 py-2 text-left text-sm font-semibold transition-colors last:mb-0",
+                  frequency === option.value ? "bg-[#193728] text-[#5ED890]" : "text-[#F7F7F8] hover:bg-[#171B20]"
+                )}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>,
+          document.body
+        )
+      : null;
+
   const datePicker =
     isDatePickerOpen && datePickerPosition
       ? createPortal(
           <div
             ref={startDatePickerRef}
-            className="fixed z-50 rounded-[24px] border border-slate-200 bg-white shadow-[0_24px_70px_rgba(15,23,42,0.18)]"
+            className="fixed z-[70] overflow-hidden rounded-2xl border border-[#20242A] bg-[#111418] shadow-[0_24px_60px_rgba(0,0,0,0.48)]"
             style={{
               top: `${datePickerPosition.top}px`,
               left: `${datePickerPosition.left}px`,
-              width: `${datePickerPosition.width}px`
+              width: `${datePickerPosition.width}px`,
+              maxHeight: `${datePickerPosition.maxHeight}px`
             }}
           >
-            <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
+            <div className="flex items-center justify-between border-b border-[#20242A] px-3 py-3">
               <button
                 type="button"
-                className="rounded-full p-1 text-slate-400 transition-colors hover:bg-slate-50 hover:text-slate-700"
+                className="rounded-md p-1 text-[#A1A1AA] transition-colors hover:bg-[#25272F] hover:text-[#F4F4F5]"
                 onClick={() => setDatePickerMonth((prev) => addMonths(prev, -1))}
               >
                 <ChevronLeft className="h-4 w-4" />
               </button>
 
-              <div className="text-sm font-semibold text-slate-900">
+              <div className="text-sm font-semibold text-[#F4F4F5]">
                 {datePickerMonth.getFullYear()}/{datePickerMonth.getMonth() + 1}
               </div>
 
               <button
                 type="button"
-                className="rounded-full p-1 text-slate-400 transition-colors hover:bg-slate-50 hover:text-slate-700"
+                className="rounded-md p-1 text-[#A1A1AA] transition-colors hover:bg-[#25272F] hover:text-[#F4F4F5]"
                 onClick={() => setDatePickerMonth((prev) => addMonths(prev, 1))}
               >
                 <ChevronRight className="h-4 w-4" />
               </button>
             </div>
 
-            <div className="px-4 py-3">
-              <div className="mb-3 grid grid-cols-7 gap-1 text-center text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">
+            <div className="px-3 py-3">
+              <div className="mb-3 grid grid-cols-7 gap-1 text-center text-[11px] font-semibold uppercase tracking-[0.12em] text-[#A1A1AA]">
                 {DAY_LABELS.map((label) => (
                   <div key={label}>{label}</div>
                 ))}
@@ -328,10 +351,10 @@ export default function TaskWorkflowModal({ availableTags = [], onSave, onClose 
                       setIsDatePickerOpen(false);
                     }}
                     className={clsx(
-                      "flex h-10 items-center justify-center rounded-xl text-sm transition-colors",
-                      day.inMonth ? "text-slate-800 hover:bg-slate-50" : "text-slate-300 hover:bg-slate-50/80",
-                      day.isToday && "border border-slate-300",
-                      day.isSelected && "bg-slate-900 text-white hover:bg-slate-900"
+                      "flex h-9 items-center justify-center rounded-xl text-sm transition-colors",
+                      day.inMonth ? "text-[#F4F4F5] hover:bg-[#25272F]" : "text-[#52525B] hover:bg-[#25272F]",
+                      day.isToday && "border border-[#52525B]",
+                      day.isSelected && "bg-[#0CCB8E] text-white hover:bg-[#0CCB8E]"
                     )}
                   >
                     {day.date.getDate()}
@@ -339,10 +362,10 @@ export default function TaskWorkflowModal({ availableTags = [], onSave, onClose 
                 ))}
               </div>
 
-              <div className="mt-3 flex items-center justify-end gap-3 border-t border-slate-100 pt-3">
+              <div className="mt-3 flex items-center justify-end gap-3 border-t border-[#20242A] pt-3">
                 <button
                   type="button"
-                  className="text-sm font-medium text-slate-500 transition-colors hover:text-slate-800"
+                  className="text-sm font-medium text-[#A1A1AA] transition-colors hover:text-[#F4F4F5]"
                   onClick={() => {
                     const today = formatDateValue(new Date());
                     setStartDate(today);
@@ -361,7 +384,7 @@ export default function TaskWorkflowModal({ availableTags = [], onSave, onClose 
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/35 p-4 backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 p-4 backdrop-blur-sm"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) {
           onClose();
@@ -369,31 +392,31 @@ export default function TaskWorkflowModal({ availableTags = [], onSave, onClose 
       }}
     >
       <div
-        className="relative flex max-h-[calc(100vh-32px)] w-full max-w-2xl flex-col overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-2xl"
+        className="relative flex max-h-[calc(100vh-32px)] w-full max-w-2xl flex-col overflow-hidden rounded-lg border border-[#34363D] bg-[#1C1D22] shadow-2xl"
         onMouseDown={(event) => event.stopPropagation()}
       >
         <button
           type="button"
           onClick={onClose}
-          className="absolute right-5 top-5 rounded-full p-2 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700"
+          className="absolute right-5 top-5 rounded-md p-2 text-[#A1A1AA] transition-colors hover:bg-[#25272F] hover:text-[#F4F4F5]"
         >
           <X className="h-5 w-5" />
         </button>
 
-        <div className="shrink-0 border-b border-slate-100 px-7 py-6">
-          <div className="mb-2 inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+        <div className="shrink-0 border-b border-[#34363D] px-7 py-6">
+          <div className="mb-2 inline-flex items-center gap-2 rounded-full bg-[#25272F] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-[#A1A1AA]">
             <Repeat className="h-3.5 w-3.5" />
             Workflow
           </div>
-          <h2 className="text-2xl font-semibold text-slate-900">未配置タスクを自動で追加</h2>
+          <h2 className="text-2xl font-semibold text-[#F4F4F5]">未配置タスクを自動で追加</h2>
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto px-7 py-6">
           <div className="grid gap-6 md:grid-cols-[1.2fr_0.8fr]">
             <div className="space-y-5">
-              <section className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
-                <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-800">
-                  <Sparkles className="h-4 w-4 text-slate-500" />
+              <section className="rounded-lg border border-[#34363D] bg-[#15161A] p-4">
+                <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-[#F4F4F5]">
+                  <Sparkles className="h-4 w-4 text-[#A1A1AA]" />
                   追加するタスク
                 </div>
 
@@ -402,8 +425,8 @@ export default function TaskWorkflowModal({ availableTags = [], onSave, onClose 
                     <input
                       value={workflowName}
                       onChange={(event) => setWorkflowName(event.target.value)}
-                      placeholder="例: 毎週のふりかえり追加"
-                      className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none transition focus:border-slate-400"
+                      placeholder="例: 毎週のレビューを追加"
+                      className="w-full rounded-md border border-[#34363D] bg-[#202229] px-3 py-2.5 text-sm text-[#F4F4F5] outline-none transition placeholder:text-[#71717A] focus:border-[#0CCB8E]"
                     />
                   </PickerField>
 
@@ -413,7 +436,7 @@ export default function TaskWorkflowModal({ availableTags = [], onSave, onClose 
                       value={title}
                       onChange={(event) => setTitle(event.target.value)}
                       placeholder="例: 週次レビューをまとめる"
-                      className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none transition focus:border-slate-400"
+                      className="w-full rounded-md border border-[#34363D] bg-[#202229] px-3 py-2.5 text-sm text-[#F4F4F5] outline-none transition placeholder:text-[#71717A] focus:border-[#0CCB8E]"
                     />
                   </PickerField>
 
@@ -423,7 +446,7 @@ export default function TaskWorkflowModal({ availableTags = [], onSave, onClose 
                       onChange={(event) => setDescription(event.target.value)}
                       rows={4}
                       placeholder="追加されたときの初期メモ"
-                      className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none transition focus:border-slate-400"
+                      className="w-full rounded-md border border-[#34363D] bg-[#202229] px-3 py-2.5 text-sm text-[#F4F4F5] outline-none transition placeholder:text-[#71717A] focus:border-[#0CCB8E]"
                     />
                   </PickerField>
 
@@ -432,7 +455,7 @@ export default function TaskWorkflowModal({ availableTags = [], onSave, onClose 
                       value={tagsInput}
                       onChange={(event) => setTagsInput(event.target.value)}
                       placeholder="カンマ区切りで入力"
-                      className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none transition focus:border-slate-400"
+                      className="w-full rounded-md border border-[#34363D] bg-[#202229] px-3 py-2.5 text-sm text-[#F4F4F5] outline-none transition placeholder:text-[#71717A] focus:border-[#0CCB8E]"
                     />
                   </PickerField>
 
@@ -443,7 +466,7 @@ export default function TaskWorkflowModal({ availableTags = [], onSave, onClose 
                           key={tag}
                           type="button"
                           onClick={() => setTagsInput((prev) => (prev.trim() ? `${prev}, ${tag}` : tag))}
-                          className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-slate-600 transition hover:border-slate-300 hover:text-slate-900"
+                          className="rounded-full border border-[#34363D] bg-[#202229] px-3 py-1 text-xs font-medium text-[#A1A1AA] transition hover:border-[#0CCB8E] hover:text-[#F4F4F5]"
                         >
                           {tag}
                         </button>
@@ -452,7 +475,7 @@ export default function TaskWorkflowModal({ availableTags = [], onSave, onClose 
                   ) : null}
 
                   <div>
-                    <div className="mb-1.5 text-xs font-medium text-slate-600">カードカラー</div>
+                    <div className="mb-1.5 text-xs font-medium text-[#A1A1AA]">カードカラー</div>
                     <div className="flex flex-wrap gap-2">
                       {COLOR_OPTIONS.map((swatch) => (
                         <button
@@ -460,7 +483,7 @@ export default function TaskWorkflowModal({ availableTags = [], onSave, onClose 
                           type="button"
                           onClick={() => setColor(swatch)}
                           className={`h-8 w-8 rounded-full border-2 transition-transform hover:scale-105 ${
-                            color === swatch ? "border-slate-900" : "border-white"
+                            color === swatch ? "border-[#F4F4F5]" : "border-[#34363D]"
                           }`}
                           style={{ backgroundColor: swatch }}
                         />
@@ -472,9 +495,9 @@ export default function TaskWorkflowModal({ availableTags = [], onSave, onClose 
             </div>
 
             <div className="space-y-5">
-              <section className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
-                <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-800">
-                  <CalendarDays className="h-4 w-4 text-slate-500" />
+              <section className="rounded-lg border border-[#34363D] bg-[#15161A] p-4">
+                <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-[#F4F4F5]">
+                  <CalendarDays className="h-4 w-4 text-[#A1A1AA]" />
                   追加タイミング
                 </div>
 
@@ -485,40 +508,15 @@ export default function TaskWorkflowModal({ availableTags = [], onSave, onClose 
                         ref={frequencyButtonRef}
                         type="button"
                         onClick={() => setIsFrequencyMenuOpen((prev) => !prev)}
-                        className="flex w-full items-center justify-between rounded-[20px] border border-slate-200 bg-slate-50/70 px-4 py-3 text-left shadow-[0_1px_2px_rgba(15,23,42,0.04)] transition-colors hover:border-slate-300 hover:bg-white"
+                        className="flex w-full items-center justify-between rounded-md border border-[#34363D] bg-[#202229] px-4 py-3 text-left transition-colors hover:border-[#52525B]"
                       >
-                        <span className="text-sm font-semibold text-slate-900">
+                        <span className="text-sm font-semibold text-[#F4F4F5]">
                           {FREQUENCY_OPTIONS.find((option) => option.value === frequency)?.label}
                         </span>
-                        <ChevronDown className={clsx("h-4 w-4 text-slate-400 transition-transform", isFrequencyMenuOpen && "rotate-180")} />
+                        <ChevronDown className={clsx("h-4 w-4 text-[#A1A1AA] transition-transform", isFrequencyMenuOpen && "rotate-180")} />
                       </button>
 
-                      {isFrequencyMenuOpen ? (
-                        <div
-                          ref={frequencyMenuRef}
-                          className={clsx(
-                            "absolute left-0 right-0 z-20 rounded-2xl border border-slate-200 bg-white p-2 shadow-[0_18px_40px_rgba(15,23,42,0.12)]",
-                            frequencyMenuDirection === "up" ? "bottom-[calc(100%+8px)]" : "top-[calc(100%+8px)]"
-                          )}
-                        >
-                          {FREQUENCY_OPTIONS.map((option) => (
-                            <button
-                              key={option.value}
-                              type="button"
-                              onClick={() => {
-                                setFrequency(option.value);
-                                setIsFrequencyMenuOpen(false);
-                              }}
-                              className={clsx(
-                                "mb-1 w-full rounded-xl px-3 py-2 text-left text-sm transition-colors last:mb-0",
-                                frequency === option.value ? "bg-slate-100 font-medium text-slate-900" : "text-slate-600 hover:bg-slate-50"
-                              )}
-                            >
-                              {option.label}
-                            </button>
-                          ))}
-                        </div>
-                      ) : null}
+                      {frequencyMenu}
                     </div>
                   </PickerField>
 
@@ -530,13 +528,13 @@ export default function TaskWorkflowModal({ availableTags = [], onSave, onClose 
                         setDatePickerMonth(startOfMonth(parseDateValue(startDate) || new Date()));
                         setIsDatePickerOpen((prev) => !prev);
                       }}
-                      className="flex w-full items-center gap-3 rounded-[20px] border border-slate-200 bg-slate-50/70 px-4 py-3 text-left shadow-[0_1px_2px_rgba(15,23,42,0.04)] transition-colors hover:border-slate-300 hover:bg-white"
+                      className="flex w-full items-center gap-3 rounded-md border border-[#34363D] bg-[#202229] px-4 py-3 text-left transition-colors hover:border-[#52525B]"
                     >
                       <div className="min-w-0 flex-1">
-                        <div className="text-sm font-semibold text-slate-900">{formattedStartDate || "日付を選択"}</div>
-                        <div className="mt-0.5 text-[11px] font-medium text-slate-400">開始日</div>
+                        <div className="text-sm font-semibold text-[#F4F4F5]">{formattedStartDate || "日付を選択"}</div>
+                        <div className="mt-0.5 text-[11px] font-medium text-[#A1A1AA]">開始日</div>
                       </div>
-                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-400">
+                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-[#34363D] bg-[#15161A] text-[#A1A1AA]">
                         <CalendarDays className="h-4 w-4" />
                       </div>
                     </button>
@@ -544,7 +542,7 @@ export default function TaskWorkflowModal({ availableTags = [], onSave, onClose 
 
                   {frequency === "weekly" ? (
                     <div>
-                      <div className="mb-1.5 text-xs font-medium text-slate-600">曜日</div>
+                      <div className="mb-1.5 text-xs font-medium text-[#A1A1AA]">曜日</div>
                       <div className="flex flex-wrap gap-2">
                         {WEEKDAY_OPTIONS.map((option) => {
                           const selected = weekdays.includes(option.value);
@@ -555,8 +553,8 @@ export default function TaskWorkflowModal({ availableTags = [], onSave, onClose 
                               onClick={() => toggleWeekday(option.value)}
                               className={`rounded-full border px-3 py-2 text-sm font-medium transition ${
                                 selected
-                                  ? "border-slate-900 bg-slate-900 text-white"
-                                  : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900"
+                                  ? "border-[#0CCB8E] bg-[#0CCB8E] text-white"
+                                  : "border-[#34363D] bg-[#202229] text-[#A1A1AA] hover:border-[#52525B] hover:text-[#F4F4F5]"
                               }`}
                             >
                               {option.label}
@@ -569,9 +567,9 @@ export default function TaskWorkflowModal({ availableTags = [], onSave, onClose 
 
                   {frequency === "monthly" ? (
                     <div>
-                      <div className="mb-1.5 text-xs font-medium text-slate-600">日付</div>
-                      <div className="rounded-[20px] border border-slate-200 bg-slate-50/70 p-3 shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
-                        <div className="mb-3 text-sm font-semibold text-slate-900">毎月 {dayOfMonth} 日</div>
+                      <div className="mb-1.5 text-xs font-medium text-[#A1A1AA]">日付</div>
+                      <div className="rounded-2xl border border-[#34363D] bg-[#202229] p-3 shadow-[0_1px_2px_rgba(0,0,0,0.16)]">
+                        <div className="mb-3 text-sm font-semibold text-[#F4F4F5]">毎月 {dayOfMonth} 日</div>
                         <div className="grid grid-cols-7 gap-2">
                           {Array.from({ length: 31 }, (_, index) => {
                             const day = index + 1;
@@ -585,8 +583,8 @@ export default function TaskWorkflowModal({ availableTags = [], onSave, onClose 
                                 className={clsx(
                                   "rounded-xl px-0 py-2 text-sm font-medium transition-colors",
                                   selected
-                                    ? "bg-slate-900 text-white shadow-sm"
-                                    : "bg-white text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                                    ? "bg-[#0CCB8E] text-white shadow-sm"
+                                    : "bg-[#15161A] text-[#A1A1AA] hover:bg-[#25272F] hover:text-[#F4F4F5]"
                                 )}
                               >
                                 {day}
@@ -599,27 +597,26 @@ export default function TaskWorkflowModal({ availableTags = [], onSave, onClose 
                   ) : null}
 
                   <PickerField label="期限">
-                    <div className="rounded-[20px] border border-slate-200 bg-slate-50/70 p-3 shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
-                      <div className="mb-3 text-sm font-semibold text-slate-900">作成日から {dueOffsetDays} 日後</div>
+                    <div className="rounded-2xl border border-[#34363D] bg-[#202229] p-3 shadow-[0_1px_2px_rgba(0,0,0,0.16)]">
+                      <div className="mb-3 text-sm font-semibold text-[#F4F4F5]">作成日から {dueOffsetDays} 日後</div>
 
                       <div className="mb-3 flex items-center gap-2">
                         <button
                           type="button"
                           onClick={() => setDueOffsetDays((prev) => Math.max(0, prev - 1))}
-                          className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 transition hover:border-slate-300 hover:text-slate-900"
+                          className="flex h-10 w-10 items-center justify-center rounded-xl border border-[#34363D] bg-[#15161A] text-[#A1A1AA] transition hover:border-[#52525B] hover:text-[#F4F4F5]"
                           title="1日減らす"
                         >
                           <Minus className="h-4 w-4" />
                         </button>
 
-                        <div className="flex-1 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-center text-sm font-semibold text-slate-900">
+                        <div className="flex-1 rounded-xl border border-[#34363D] bg-[#15161A] px-4 py-2.5 text-center text-sm font-semibold text-[#F4F4F5]">
                           {dueOffsetDays} 日後
                         </div>
-
                         <button
                           type="button"
                           onClick={() => setDueOffsetDays((prev) => Math.min(365, prev + 1))}
-                          className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 transition hover:border-slate-300 hover:text-slate-900"
+                          className="flex h-10 w-10 items-center justify-center rounded-xl border border-[#34363D] bg-[#15161A] text-[#A1A1AA] transition hover:border-[#52525B] hover:text-[#F4F4F5]"
                           title="1日増やす"
                         >
                           <Plus className="h-4 w-4" />
@@ -637,8 +634,8 @@ export default function TaskWorkflowModal({ availableTags = [], onSave, onClose 
                               className={clsx(
                                 "rounded-full px-3 py-2 text-sm font-medium transition-colors",
                                 selected
-                                  ? "bg-slate-900 text-white shadow-sm"
-                                  : "bg-white text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                                  ? "bg-[#0CCB8E] text-white shadow-sm"
+                                  : "bg-[#15161A] text-[#A1A1AA] hover:bg-[#25272F] hover:text-[#F4F4F5]"
                               )}
                             >
                               {preset === 0 ? "当日" : `${preset}日後`}
@@ -651,22 +648,22 @@ export default function TaskWorkflowModal({ availableTags = [], onSave, onClose 
                 </div>
               </section>
 
-              <section className="rounded-2xl border border-dashed border-slate-200 bg-white p-4">
-                <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Preview</div>
-                <div className="mt-2 text-sm font-semibold text-slate-900">{workflowName.trim() || title.trim() || "新しいワークフロー"}</div>
-                <div className="mt-1 text-sm text-slate-500">{previewLabel} に未配置タスクを追加</div>
+              <section className="rounded-2xl border border-dashed border-[#34363D] bg-[#15161A] p-4">
+                <div className="text-xs font-semibold uppercase tracking-[0.18em] text-[#71717A]">Preview</div>
+                <div className="mt-2 text-sm font-semibold text-[#F4F4F5]">{workflowName.trim() || title.trim() || "新しいワークフロー"}</div>
+                <div className="mt-1 text-sm text-[#A1A1AA]">{previewLabel} に未配置タスクを追加</div>
               </section>
             </div>
           </div>
         </div>
 
-        <div className="flex shrink-0 items-center justify-between border-t border-slate-100 px-7 py-5">
-          <div className="text-xs text-slate-500">あとから停止や削除もできます。</div>
+        <div className="flex shrink-0 items-center justify-between border-t border-[#34363D] px-7 py-5">
+          <div className="text-xs text-[#A1A1AA]">あとから停止や削除もできます。</div>
           <div className="flex items-center gap-3">
             <button
               type="button"
               onClick={onClose}
-              className="rounded-xl px-4 py-2.5 text-sm font-medium text-slate-600 transition hover:bg-slate-100"
+              className="rounded-xl px-4 py-2.5 text-sm font-medium text-[#A1A1AA] transition hover:bg-[#25272F] hover:text-[#F4F4F5]"
             >
               キャンセル
             </button>
@@ -693,7 +690,7 @@ export default function TaskWorkflowModal({ availableTags = [], onSave, onClose 
                   }
                 })
               }
-              className="rounded-xl bg-slate-900 px-5 py-2.5 text-sm font-medium text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+              className="rounded-xl bg-[#0CCB8E] px-5 py-2.5 text-sm font-medium text-white transition hover:bg-[#10B981] disabled:cursor-not-allowed disabled:opacity-50"
             >
               ワークフローを作成
             </button>
@@ -705,3 +702,7 @@ export default function TaskWorkflowModal({ availableTags = [], onSave, onClose 
     </div>
   );
 }
+
+
+
+

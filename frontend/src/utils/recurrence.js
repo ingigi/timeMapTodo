@@ -1,9 +1,9 @@
-const DATE_KEY_RE = /^\d{4}-\d{2}-\d{2}$/;
+﻿const DATE_KEY_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 export const REPEAT_PRESETS = [
   { value: "none", label: "指定配置" },
   { value: "weekly", label: "毎週" },
-  { value: "weekdays", label: "毎週平日" },
+  { value: "weekdays", label: "平日" },
   { value: "custom", label: "カスタム" }
 ];
 
@@ -160,3 +160,7 @@ export const generateRecurringDateKeys = (task, rangeStart, rangeEnd) => {
   if (!nextDate || nextDate < rangeStart || nextDate > rangeEnd) return [];
   return [nextDateKey];
 };
+
+
+
+

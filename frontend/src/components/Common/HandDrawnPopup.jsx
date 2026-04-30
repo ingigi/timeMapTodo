@@ -1,15 +1,16 @@
 import { CalendarDays, ChevronDown, ChevronLeft, ChevronRight, Pencil, Plus, Trash2, X } from "lucide-react";
 import clsx from "clsx";
 import { createPortal } from "react-dom";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { getAnchoredPopoverPlacement, getSidePopoverPlacement } from "../../utils/popoverPosition";
 
-const DAY_LABELS = ["月", "火", "水", "木", "金", "土", "日"];
+const DAY_LABELS = ["\u65e5", "\u6708", "\u706b", "\u6c34", "\u6728", "\u91d1", "\u571f"];
 
 function Field({ label, children, align = "center" }) {
   const alignClass = align === "start" ? "md:items-start" : "md:items-center";
   return (
     <div className={`grid gap-3 md:grid-cols-[84px_1fr] ${alignClass}`}>
-      <label className="pt-1 text-sm font-medium text-slate-600">{label}</label>
+      <label className="pt-1 text-sm font-medium text-[#A1A1AA]">{label}</label>
       {children}
     </div>
   );
@@ -59,21 +60,24 @@ export default function HandDrawnPopup({
   onRenameTag,
   onClose,
   onUpdate,
+  onDelete,
   autoFocusTitle = false
 }) {
   const tagMenuRef = useRef(null);
   const tagTriggerRef = useRef(null);
+  const popupPanelRef = useRef(null);
   const newTagInputRef = useRef(null);
   const titleInputRef = useRef(null);
   const focusedTitleTaskIdRef = useRef(null);
   const deadlineButtonRef = useRef(null);
   const deadlinePickerRef = useRef(null);
-  const [tagMenuDirection, setTagMenuDirection] = useState("down");
+  const [tagMenuPosition, setTagMenuPosition] = useState(null);
   const [deadlinePickerPosition, setDeadlinePickerPosition] = useState(null);
   const [formData, setFormData] = useState({
     title: task.title || "",
     selectedTags: task.tags || [],
     deadline: task.deadline || "",
+    scheduledTime: task.scheduledTime || "",
     description: task.description || ""
   });
   const [isTagMenuOpen, setIsTagMenuOpen] = useState(false);
@@ -88,9 +92,14 @@ export default function HandDrawnPopup({
   const selectedDate = useMemo(() => parseDateValue(formData.deadline), [formData.deadline]);
   const formattedDeadline = useMemo(() => formatDateLabel(formData.deadline), [formData.deadline]);
 
+  const calculateTagMenuPosition = useCallback(() => {
+    if (!tagTriggerRef.current) return null;
+    return getSidePopoverPlacement(tagTriggerRef.current, popupPanelRef.current, { width: 400, height: 300 });
+  }, []);
+
   const deadlineCalendarDays = useMemo(() => {
     const monthStart = startOfMonth(deadlinePickerMonth);
-    const startWeekday = (monthStart.getDay() + 6) % 7;
+    const startWeekday = monthStart.getDay();
     const gridStart = new Date(monthStart);
     gridStart.setDate(gridStart.getDate() - startWeekday);
 
@@ -111,9 +120,14 @@ export default function HandDrawnPopup({
     onUpdate(task.id, {
       title: nextFormData.title.trim(),
       deadline: nextFormData.deadline || null,
+      scheduledTime: nextFormData.scheduledTime || null,
       description: nextFormData.description,
       tags: nextFormData.selectedTags
     });
+  };
+
+  const handleDeleteTask = () => {
+    onDelete?.(task.id);
   };
 
   const handleChange = (event) => {
@@ -270,37 +284,36 @@ export default function HandDrawnPopup({
   useLayoutEffect(() => {
     if (!isTagMenuOpen || !tagTriggerRef.current) return;
 
-    const frame = requestAnimationFrame(() => {
-      if (!tagTriggerRef.current) return;
+    const updateTagMenuPosition = () => {
+      const nextPosition = calculateTagMenuPosition();
+      if (nextPosition) setTagMenuPosition(nextPosition);
+    };
 
-      const rect = tagTriggerRef.current.getBoundingClientRect();
-      const spaceBelow = window.innerHeight - rect.bottom;
-      const spaceAbove = rect.top;
-      setTagMenuDirection(spaceBelow < 320 && spaceAbove > spaceBelow ? "up" : "down");
-    });
+    const frame = requestAnimationFrame(updateTagMenuPosition);
 
     return () => cancelAnimationFrame(frame);
-  }, [isTagMenuOpen, editingNewTag, availableTags.length, formData.selectedTags.length]);
+  }, [calculateTagMenuPosition, isTagMenuOpen, editingNewTag, availableTags.length, formData.selectedTags.length]);
+
+  useEffect(() => {
+    if (!isTagMenuOpen) return;
+
+    const handleReposition = () => {
+      const nextPosition = calculateTagMenuPosition();
+      if (nextPosition) setTagMenuPosition(nextPosition);
+    };
+
+    window.addEventListener("resize", handleReposition);
+    window.addEventListener("scroll", handleReposition, true);
+    return () => {
+      window.removeEventListener("resize", handleReposition);
+      window.removeEventListener("scroll", handleReposition, true);
+    };
+  }, [calculateTagMenuPosition, isTagMenuOpen]);
 
   useLayoutEffect(() => {
     if (!isDeadlinePickerOpen || !deadlineButtonRef.current) return;
 
-    const rect = deadlineButtonRef.current.getBoundingClientRect();
-    const pickerWidth = 332;
-    const pickerHeight = 412;
-    const spaceBelow = window.innerHeight - rect.bottom;
-    const spaceAbove = rect.top;
-    const openUp = spaceBelow < pickerHeight && spaceAbove > spaceBelow;
-    const top = openUp
-      ? Math.max(12, rect.top - 16 - pickerHeight)
-      : Math.min(window.innerHeight - pickerHeight - 12, rect.bottom + 12);
-    const left = Math.min(Math.max(12, rect.left), window.innerWidth - pickerWidth - 12);
-
-    setDeadlinePickerPosition({
-      top,
-      left,
-      width: Math.min(pickerWidth, window.innerWidth - 24)
-    });
+    setDeadlinePickerPosition(getAnchoredPopoverPlacement(deadlineButtonRef.current, { width: 320, height: 396 }));
   }, [isDeadlinePickerOpen, deadlinePickerMonth, formData.deadline]);
 
   useEffect(() => {
@@ -309,22 +322,7 @@ export default function HandDrawnPopup({
     const handleReposition = () => {
       if (!deadlineButtonRef.current) return;
 
-      const rect = deadlineButtonRef.current.getBoundingClientRect();
-      const pickerWidth = 332;
-      const pickerHeight = 412;
-      const spaceBelow = window.innerHeight - rect.bottom;
-      const spaceAbove = rect.top;
-      const openUp = spaceBelow < pickerHeight && spaceAbove > spaceBelow;
-      const top = openUp
-        ? Math.max(12, rect.top - 16 - pickerHeight)
-        : Math.min(window.innerHeight - pickerHeight - 12, rect.bottom + 12);
-      const left = Math.min(Math.max(12, rect.left), window.innerWidth - pickerWidth - 12);
-
-      setDeadlinePickerPosition({
-        top,
-        left,
-        width: Math.min(pickerWidth, window.innerWidth - 24)
-      });
+      setDeadlinePickerPosition(getAnchoredPopoverPlacement(deadlineButtonRef.current, { width: 320, height: 396 }));
     };
 
     window.addEventListener("resize", handleReposition);
@@ -335,42 +333,175 @@ export default function HandDrawnPopup({
     };
   }, [isDeadlinePickerOpen]);
 
+  const tagMenu =
+    isTagMenuOpen && tagMenuPosition
+      ? createPortal(
+          <div
+            ref={tagMenuRef}
+            className="fixed z-[80] overflow-hidden rounded-2xl border border-[#20242A] bg-[#111418] p-3 shadow-[0_24px_60px_rgba(0,0,0,0.48)]"
+            style={{
+              top: `${tagMenuPosition.top}px`,
+              left: `${tagMenuPosition.left}px`,
+              width: `${tagMenuPosition.width}px`,
+              maxHeight: `${tagMenuPosition.maxHeight}px`
+            }}
+          >
+            <div className="mb-2 flex items-center gap-2 text-[12px] font-bold uppercase tracking-[0.14em] text-[#5ED890]">
+              <span className="h-2 w-2 rounded-full bg-[#5ED890]" />
+              Tags
+            </div>
+
+            <div className="mb-3 max-h-[172px] space-y-1 overflow-y-auto pr-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+              {availableTags.length > 0 ? (
+                availableTags.map((tag) => {
+                  const checked = selectedTagSet.has(tag);
+                  const isEditing = editingTagName === tag;
+
+                  if (isEditing) {
+                    return (
+                      <div key={tag} className="flex items-center gap-2 rounded-xl border border-[#20242A] bg-[#171B20] px-3 py-2">
+                        <span
+                          className={clsx(
+                            "h-2.5 w-2.5 shrink-0 rounded-full border",
+                            checked ? "border-[#0CCB8E] bg-[#0CCB8E]" : "border-[#52525B] bg-[#15161A]"
+                          )}
+                        />
+                        <input
+                          value={editingTagDraft}
+                          onChange={(event) => setEditingTagDraft(event.target.value)}
+                          onBlur={commitEditTag}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter") {
+                              event.preventDefault();
+                              commitEditTag();
+                            }
+                            if (event.key === "Escape") {
+                              setEditingTagName("");
+                              setEditingTagDraft("");
+                            }
+                          }}
+                          className="min-w-0 flex-1 bg-transparent text-sm text-[#F4F4F5] outline-none placeholder:text-[#71717A]"
+                        />
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <div
+                      key={tag}
+                      className={clsx(
+                        "group flex items-center gap-2 rounded-xl px-3 py-2 transition-colors",
+                        checked ? "bg-[#193728]" : "hover:bg-[#171B20]"
+                      )}
+                    >
+                      <button type="button" onClick={() => toggleTag(tag)} className="flex min-w-0 flex-1 items-center gap-2 text-left text-sm">
+                        <span
+                          className={clsx(
+                            "h-2.5 w-2.5 shrink-0 rounded-full border",
+                            checked ? "border-[#0CCB8E] bg-[#0CCB8E]" : "border-[#52525B] bg-[#15161A]"
+                          )}
+                        />
+                        <span className={clsx("truncate", checked ? "text-[#34D399]" : "text-[#D4D4D8]")}>{tag}</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => startEditTag(tag)}
+                        className="rounded-md p-1.5 text-[#71717A] opacity-0 transition-colors hover:bg-[#34363D] hover:text-[#F4F4F5] group-hover:opacity-100"
+                        title="Rename tag"
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveTagOption(tag)}
+                        className="rounded-md p-1.5 text-[#71717A] opacity-0 transition-colors hover:bg-red-500/10 hover:text-red-300 group-hover:opacity-100"
+                        title="Delete tag"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  );
+                })
+              ) : (
+                <div className="rounded-xl bg-[#171B20] px-3 py-2 text-sm font-semibold text-[#8B949E]">No tags yet</div>
+              )}
+
+              {editingNewTag && (
+                <div className="flex items-center gap-2 rounded-xl border border-[#20242A] bg-[#171B20] px-3 py-2">
+                  <Pencil className="h-4 w-4 text-[#9CA3AF]" />
+                  <input
+                    ref={newTagInputRef}
+                    value={newTagDraft}
+                    onChange={(event) => setNewTagDraft(event.target.value)}
+                    onBlur={commitNewTag}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        event.preventDefault();
+                        commitNewTag();
+                      }
+                    }}
+                    className="flex-1 bg-transparent text-sm text-[#F4F4F5] outline-none"
+                    placeholder="New tag"
+                  />
+                </div>
+              )}
+            </div>
+
+            {!editingNewTag && (
+              <button
+                type="button"
+                onClick={() => {
+                  setEditingNewTag(true);
+                  setNewTagDraft("");
+                }}
+                className="inline-flex items-center gap-2 rounded-md border border-dashed border-[#52525B] px-3 py-2 text-sm font-medium text-[#A1A1AA] transition-colors hover:border-[#0CCB8E] hover:text-[#F4F4F5]"
+              >
+                <Plus className="h-4 w-4" />
+                Add tag
+              </button>
+            )}
+          </div>,
+          document.body
+        )
+      : null;
+
   const deadlinePicker =
     isDeadlinePickerOpen && deadlinePickerPosition
       ? createPortal(
           <div
             ref={deadlinePickerRef}
-            className="fixed z-50 rounded-[24px] border border-slate-200 bg-white shadow-[0_24px_70px_rgba(15,23,42,0.18)]"
+            className="fixed z-50 overflow-hidden rounded-2xl border border-[#20242A] bg-[#111418] shadow-[0_24px_60px_rgba(0,0,0,0.48)]"
             style={{
               top: `${deadlinePickerPosition.top}px`,
               left: `${deadlinePickerPosition.left}px`,
-              width: `${deadlinePickerPosition.width}px`
+              width: `${deadlinePickerPosition.width}px`,
+              maxHeight: `${deadlinePickerPosition.maxHeight}px`
             }}
           >
-            <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
+            <div className="flex items-center justify-between border-b border-[#20242A] px-3 py-3">
               <button
                 type="button"
-                className="rounded-full p-1 text-slate-400 transition-colors hover:bg-slate-50 hover:text-slate-700"
+                className="rounded-md p-1 text-[#A1A1AA] transition-colors hover:bg-[#25272F] hover:text-[#F4F4F5]"
                 onClick={() => setDeadlinePickerMonth((prev) => addMonths(prev, -1))}
               >
                 <ChevronLeft className="h-4 w-4" />
               </button>
 
-              <div className="text-sm font-semibold text-slate-900">
+              <div className="text-sm font-semibold text-[#F4F4F5]">
                 {deadlinePickerMonth.getFullYear()}/{deadlinePickerMonth.getMonth() + 1}
               </div>
 
               <button
                 type="button"
-                className="rounded-full p-1 text-slate-400 transition-colors hover:bg-slate-50 hover:text-slate-700"
+                className="rounded-md p-1 text-[#A1A1AA] transition-colors hover:bg-[#25272F] hover:text-[#F4F4F5]"
                 onClick={() => setDeadlinePickerMonth((prev) => addMonths(prev, 1))}
               >
                 <ChevronRight className="h-4 w-4" />
               </button>
             </div>
 
-            <div className="px-4 py-3">
-              <div className="mb-3 grid grid-cols-7 gap-1 text-center text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">
+            <div className="px-3 py-3">
+              <div className="mb-3 grid grid-cols-7 gap-1 text-center text-[11px] font-semibold uppercase tracking-[0.12em] text-[#9CA3AF]">
                 {DAY_LABELS.map((label) => (
                   <div key={label}>{label}</div>
                 ))}
@@ -390,10 +521,10 @@ export default function HandDrawnPopup({
                       setIsDeadlinePickerOpen(false);
                     }}
                     className={clsx(
-                      "flex h-10 items-center justify-center rounded-xl text-sm transition-colors",
-                      day.inMonth ? "text-slate-800 hover:bg-slate-50" : "text-slate-300 hover:bg-slate-50/80",
-                      day.isToday && "border border-slate-300",
-                      day.isSelected && "bg-slate-900 text-white hover:bg-slate-900"
+                      "flex h-9 items-center justify-center rounded-xl text-sm transition-colors",
+                      day.inMonth ? "text-[#F4F4F5] hover:bg-[#25272F]" : "text-[#52525B] hover:bg-[#25272F]",
+                      day.isToday && "border border-[#52525B]",
+                      day.isSelected && "bg-[#0CCB8E] text-white hover:bg-[#0CCB8E]"
                     )}
                   >
                     {day.date.getDate()}
@@ -401,10 +532,10 @@ export default function HandDrawnPopup({
                 ))}
               </div>
 
-              <div className="mt-3 flex items-center justify-between gap-3 border-t border-slate-100 pt-3">
+              <div className="mt-3 flex items-center justify-between gap-3 border-t border-[#20242A] pt-3">
                 <button
                   type="button"
-                  className="text-sm font-medium text-slate-500 transition-colors hover:text-slate-800"
+                  className="text-sm font-medium text-[#A1A1AA] transition-colors hover:text-[#F4F4F5]"
                   onClick={() => {
                     setFormData((prev) => {
                       const next = { ...prev, deadline: "" };
@@ -419,7 +550,7 @@ export default function HandDrawnPopup({
 
                 <button
                   type="button"
-                  className="text-sm font-medium text-slate-500 transition-colors hover:text-slate-800"
+                  className="text-sm font-medium text-[#A1A1AA] transition-colors hover:text-[#F4F4F5]"
                   onClick={() => {
                     const today = formatDateValue(new Date());
                     setFormData((prev) => {
@@ -441,19 +572,30 @@ export default function HandDrawnPopup({
       : null;
 
   return (
-    <div className="flex h-full flex-col overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-[0_24px_80px_rgba(15,23,42,0.08)]">
-      <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
+    <div ref={popupPanelRef} className="flex h-full flex-col overflow-hidden border-l border-[#2A2D35] bg-[#1C1D22] shadow-[0_24px_80px_rgba(0,0,0,0.24)]">
+      <div className="flex items-center justify-between border-b border-[#34363D] px-5 py-4">
         <div className="min-w-0">
-          <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">詳細</div>
-          <div className="mt-1 text-lg font-semibold text-slate-900">タスク編集</div>
+          <div className="text-xs font-semibold uppercase tracking-[0.16em] text-[#71717A]">Details</div>
+          <div className="mt-1 text-lg font-semibold text-[#F4F4F5]">Task editor</div>
         </div>
-        <button
-          type="button"
-          className="rounded-full p-2 text-slate-400 transition-colors hover:bg-slate-50 hover:text-slate-700"
-          onClick={onClose}
-        >
-          <X className="h-5 w-5" />
-        </button>
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            className="rounded-md p-2 text-[#A1A1AA] transition-colors hover:bg-red-500/10 hover:text-red-300"
+            onClick={handleDeleteTask}
+            title="Delete task"
+          >
+            <Trash2 className="h-5 w-5" />
+          </button>
+          <button
+            type="button"
+            className="rounded-md p-2 text-[#A1A1AA] transition-colors hover:bg-[#25272F] hover:text-[#F4F4F5]"
+            onClick={onClose}
+            title="Close"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
       </div>
 
       <div className="flex-1 overflow-y-auto px-5 py-5">
@@ -464,23 +606,23 @@ export default function HandDrawnPopup({
               name="title"
               value={formData.title}
               onChange={handleChange}
-              className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-2xl font-semibold text-slate-900 outline-none transition-colors placeholder:text-slate-300 focus:border-slate-400"
-              placeholder="タスク名"
+              className="w-full rounded-lg border border-[#34363D] bg-[#15161A] px-4 py-3 text-2xl font-semibold text-[#F4F4F5] outline-none transition-colors placeholder:text-[#52525B] focus:border-[#0CCB8E] focus:ring-2 focus:ring-[#0CCB8E]/25"
+              placeholder="Task name"
             />
           </div>
 
-          <Field label="説明" align="start">
+          <Field label="Description" align="start">
             <textarea
               name="description"
               value={formData.description}
               onChange={handleChange}
               rows={4}
-              className="w-full rounded-2xl border border-slate-200 bg-slate-50/60 px-4 py-3 text-sm text-slate-700 outline-none transition-colors placeholder:text-slate-400 focus:border-slate-400 focus:bg-white"
-              placeholder="メモを追加"
+              className="w-full rounded-lg border border-[#34363D] bg-[#15161A] px-4 py-3 text-sm text-[#D4D4D8] outline-none transition-colors placeholder:text-[#71717A] focus:border-[#0CCB8E] focus:ring-2 focus:ring-[#0CCB8E]/25"
+              placeholder="Add notes"
             />
           </Field>
 
-          <Field label="期限">
+          <Field label="Deadline">
             <div className="relative">
               <button
                 ref={deadlineButtonRef}
@@ -489,23 +631,49 @@ export default function HandDrawnPopup({
                   setDeadlinePickerMonth(startOfMonth(parseDateValue(formData.deadline) || new Date()));
                   setIsDeadlinePickerOpen((prev) => !prev);
                 }}
-                className="flex w-full items-center gap-3 rounded-[20px] border border-slate-200 bg-slate-50/70 px-4 py-3 text-left shadow-[0_1px_2px_rgba(15,23,42,0.04)] transition-colors hover:border-slate-300 hover:bg-white focus:border-slate-400 focus:outline-none"
+                className="flex w-full items-center gap-3 rounded-lg border border-[#34363D] bg-[#15161A] px-4 py-3 text-left shadow-[0_1px_2px_rgba(0,0,0,0.16)] transition-colors hover:border-[#52525B] hover:bg-[#202229] focus:border-[#0CCB8E] focus:outline-none focus:ring-2 focus:ring-[#0CCB8E]/25"
               >
                 <div className="min-w-0 flex-1">
-                  <div className={clsx("text-sm font-semibold", formData.deadline ? "text-slate-900" : "text-slate-400")}>
-                    {formData.deadline ? formattedDeadline : "日付を選択"}
+                  <div className={clsx("text-sm font-semibold", formData.deadline ? "text-[#F4F4F5]" : "text-[#A1A1AA]")}>
+                    {formData.deadline ? formattedDeadline : "Select a date"}
                   </div>
-                  <div className="mt-0.5 text-[11px] font-medium text-slate-400">{formData.deadline ? "期限" : "期限を設定"}</div>
+                  <div className="mt-0.5 text-[11px] font-medium text-[#9CA3AF]">{formData.deadline ? "Deadline" : "Set a due date"}</div>
                 </div>
 
-                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-400">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-[#34363D] bg-[#202229] text-[#A1A1AA]">
                   <CalendarDays className="h-4 w-4" />
                 </div>
               </button>
             </div>
           </Field>
 
-          <Field label="タグ" align="start">
+          <Field label="Time">
+            <div className="flex gap-2">
+              <input
+                type="time"
+                name="scheduledTime"
+                step="900"
+                value={formData.scheduledTime}
+                onChange={handleChange}
+                className="min-w-0 flex-1 rounded-lg border border-[#34363D] bg-[#15161A] px-4 py-3 text-sm font-semibold text-[#F4F4F5] outline-none transition-colors focus:border-[#0CCB8E] focus:ring-2 focus:ring-[#0CCB8E]/25"
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  setFormData((prev) => {
+                    const next = { ...prev, scheduledTime: "" };
+                    pushUpdate(next);
+                    return next;
+                  });
+                }}
+                className="rounded-lg border border-[#34363D] px-3 py-2 text-sm font-semibold text-[#A1A1AA] transition-colors hover:bg-[#202229] hover:text-[#F4F4F5]"
+              >
+                未配置
+              </button>
+            </div>
+          </Field>
+
+          <Field label="Tags" align="start">
             <div className="relative">
               <button
                 ref={tagTriggerRef}
@@ -515,138 +683,23 @@ export default function HandDrawnPopup({
                   setEditingNewTag(false);
                   setNewTagDraft("");
                 }}
-                className="flex w-full items-center justify-between rounded-xl border border-slate-200 px-3 py-2.5 text-left transition-colors hover:border-slate-300"
+                className="flex w-full items-center justify-between rounded-lg border border-[#34363D] bg-[#15161A] px-3 py-2.5 text-left transition-colors hover:border-[#52525B]"
               >
                 <div className="flex min-w-0 flex-wrap gap-2">
                   {formData.selectedTags.length > 0 ? (
                     formData.selectedTags.map((tag) => (
-                      <span key={tag} className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-700">
+                      <span key={tag} className="rounded-full bg-[#25272F] px-2.5 py-1 text-xs font-medium text-[#D4D4D8]">
                         {tag}
                       </span>
                     ))
                   ) : (
-                    <span className="text-sm text-slate-400">タグを選択</span>
+                    <span className="text-sm text-[#9CA3AF]">Select tags</span>
                   )}
                 </div>
-                <ChevronDown className={clsx("h-4 w-4 shrink-0 text-slate-400 transition-transform", isTagMenuOpen && "rotate-180")} />
+                <ChevronDown className={clsx("h-4 w-4 shrink-0 text-[#9CA3AF] transition-transform", isTagMenuOpen && "rotate-180")} />
               </button>
 
-              {isTagMenuOpen && (
-                <div
-                  ref={tagMenuRef}
-                  className={clsx(
-                    "absolute left-0 right-0 z-20 rounded-2xl border border-slate-200 bg-white p-3 shadow-[0_18px_40px_rgba(15,23,42,0.12)]",
-                    tagMenuDirection === "up" ? "bottom-[calc(100%+8px)]" : "top-[calc(100%+8px)]"
-                  )}
-                >
-                  <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">タグ一覧</div>
-
-                  <div className="mb-3 max-h-40 space-y-1 overflow-y-auto pr-1">
-                    {availableTags.length > 0 ? (
-                      availableTags.map((tag) => {
-                        const checked = selectedTagSet.has(tag);
-                        const isEditing = editingTagName === tag;
-
-                        if (isEditing) {
-                          return (
-                            <div
-                              key={tag}
-                              className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-2"
-                            >
-                              <span
-                                className={clsx(
-                                  "h-2.5 w-2.5 shrink-0 rounded-full border",
-                                  checked ? "border-slate-900 bg-slate-900" : "border-slate-300 bg-white"
-                                )}
-                              />
-                              <input
-                                value={editingTagDraft}
-                                onChange={(event) => setEditingTagDraft(event.target.value)}
-                                onBlur={commitEditTag}
-                                onKeyDown={(event) => {
-                                  if (event.key === "Enter") {
-                                    event.preventDefault();
-                                    commitEditTag();
-                                  }
-                                  if (event.key === "Escape") {
-                                    setEditingTagName("");
-                                    setEditingTagDraft("");
-                                  }
-                                }}
-                                className="min-w-0 flex-1 bg-transparent text-sm text-slate-800 outline-none placeholder:text-slate-400"
-                              />
-                            </div>
-                          );
-                        }
-
-                        return (
-                          <div
-                            key={tag}
-                            className={clsx("group flex items-center gap-2 rounded-xl px-3 py-2 transition-colors", checked ? "bg-slate-100" : "hover:bg-slate-50")}
-                          >
-                            <button type="button" onClick={() => toggleTag(tag)} className="flex min-w-0 flex-1 items-center gap-2 text-left text-sm">
-                              <span className={clsx("h-2.5 w-2.5 shrink-0 rounded-full border", checked ? "border-slate-900 bg-slate-900" : "border-slate-300 bg-white")} />
-                              <span className="truncate text-slate-700">{tag}</span>
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => startEditTag(tag)}
-                              className="rounded-lg p-1.5 text-slate-400 opacity-0 transition-colors hover:bg-slate-100 hover:text-slate-700 group-hover:opacity-100"
-                              title="タグ名を変更"
-                            >
-                              <Pencil className="h-3.5 w-3.5" />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleRemoveTagOption(tag)}
-                              className="rounded-lg p-1.5 text-slate-400 opacity-0 transition-colors hover:bg-red-50 hover:text-red-600 group-hover:opacity-100"
-                              title="タグを削除"
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </button>
-                          </div>
-                        );
-                      })
-                    ) : (
-                      <div className="rounded-xl bg-slate-50 px-3 py-2 text-sm text-slate-500">まだタグはありません</div>
-                    )}
-
-                    {editingNewTag && (
-                      <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-2">
-                        <Pencil className="h-4 w-4 text-slate-400" />
-                        <input
-                          ref={newTagInputRef}
-                          value={newTagDraft}
-                          onChange={(event) => setNewTagDraft(event.target.value)}
-                          onBlur={commitNewTag}
-                          onKeyDown={(event) => {
-                            if (event.key === "Enter") {
-                              event.preventDefault();
-                              commitNewTag();
-                            }
-                          }}
-                          className="flex-1 bg-transparent text-sm text-slate-800 outline-none"
-                          placeholder="新しいタグ"
-                        />
-                      </div>
-                    )}
-                  </div>
-
-                  {!editingNewTag && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setEditingNewTag(true);
-                        setNewTagDraft("");
-                      }}
-                      className="inline-flex items-center gap-2 rounded-xl border border-dashed border-slate-300 px-3 py-2 text-sm font-medium text-slate-600 transition-colors hover:border-slate-400 hover:text-slate-900"
-                    >
-                      <Plus className="h-4 w-4" />
-                      タグを追加
-                    </button>
-                  )}
-                </div>
-              )}
+              {tagMenu}
             </div>
           </Field>
         </div>
@@ -656,3 +709,7 @@ export default function HandDrawnPopup({
     </div>
   );
 }
+
+
+
+

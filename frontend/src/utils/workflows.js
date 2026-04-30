@@ -1,4 +1,4 @@
-const DEFAULT_COLOR = "#5B8DEF";
+﻿const DEFAULT_COLOR = "#5B8DEF";
 
 const WEEKDAY_LABELS = ["日", "月", "火", "水", "木", "金", "土"];
 
@@ -113,14 +113,14 @@ export const describeWorkflowSchedule = (workflow) => {
     return `毎週 ${labels.join("・")}`;
   }
 
-  return `毎月${workflow.schedule.dayOfMonth}日`;
+  return `毎月 ${workflow.schedule.dayOfMonth}日`;
 };
 
 export const describeWorkflowDeadline = (workflow) => {
   const offset = Number(workflow.template.dueOffsetDays || 0);
-  if (offset === 0) return "期限は作成当日";
-  if (offset > 0) return `期限は${offset}日後`;
-  return `期限は${Math.abs(offset)}日前`;
+  if (offset === 0) return "期限: 作成日当日";
+  if (offset > 0) return `期限: 作成日から${offset}日後`;
+  return `期限: 作成日の${Math.abs(offset)}日前`;
 };
 
 export const getNextWorkflowRunDate = (workflow, fromDate = new Date()) => {
@@ -223,3 +223,7 @@ export const materializeWorkflowTasks = (state, colorPalette = [], referenceDate
     createdCount: createdTasks.length
   };
 };
+
+
+
+

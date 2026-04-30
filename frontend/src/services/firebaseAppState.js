@@ -1,4 +1,4 @@
-import { initializeApp, getApps } from "firebase/app";
+﻿import { initializeApp, getApps } from "firebase/app";
 import {
   createUserWithEmailAndPassword,
   getAuth,
@@ -197,3 +197,7 @@ export const subscribeFirebaseAppState = ({ user, onData, onError }) => {
     onError
   );
 };
+
+
+
+

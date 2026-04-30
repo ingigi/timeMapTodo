@@ -1,7 +1,12 @@
-export default function MainLayout({ children }) {
+﻿export default function MainLayout({ children, header }) {
   return (
-    <div className="flex h-screen w-full flex-col bg-[#F8F9FB]">
-      <main className="flex flex-1 overflow-hidden gap-6 p-6">{children}</main>
+    <div className="flex h-screen w-full flex-col bg-[#06080A] text-[#F7F7F8]">
+      {header}
+      <main className="flex min-h-0 flex-1 overflow-hidden">{children}</main>
     </div>
   );
 }
+
+
+
+

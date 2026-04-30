@@ -1,4 +1,4 @@
-export function getTaskStats(task) {
+﻿export function getTaskStats(task) {
   const scheduledCount = task.scheduledDate ? 1 : 0;
   const completedCount = task.completed ? 1 : 0;
   const openCount = scheduledCount && !task.completed ? 1 : 0;
@@ -15,3 +15,7 @@ export function getTaskStatus(task) {
   if (task.scheduledDate) return "InProgress";
   return "NotStarted";
 }
+
+
+
+

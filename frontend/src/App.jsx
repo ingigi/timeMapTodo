@@ -1,4 +1,5 @@
-import { useState, useCallback, useRef, useEffect } from "react";
+﻿import { useState, useCallback, useRef, useEffect } from "react";
+import { Bell, ChevronDown, LogOut, Settings, ShieldCheck, User } from "lucide-react";
 import MainLayout from "./components/layout/MainLayout";
 import TaskPool from "./components/TaskPool/TaskPool";
 import CalendarArea from "./components/CalendarArea/CalendarArea";
@@ -8,7 +9,6 @@ import { materializeWorkflowTasks, normalizeWorkflowRecord } from "./utils/workf
 import {
   createAccountWithEmail,
   getFirebaseLegacyOwnerEmail,
-  getFirebaseWorkspaceId,
   isFirebaseConfigured,
   loadLegacyFirebaseAppState,
   onFirebaseAuthChange,
@@ -22,9 +22,6 @@ import {
 const TASK_COLORS = ["#5B8DEF", "#4FB7A8", "#D9A441", "#8A7FD1", "#7FA36B", "#C97B63", "#5FA3B7", "#C27A92"];
 const UI_STORAGE_KEY = "timemaptodo-ui-settings-v1";
 
-const DEFAULT_TASK_LIST_FILTER_CONFIG = { statuses: [], tags: [] };
-const DEFAULT_BOARD_FILTER_CONFIG = { statuses: [], tags: [] };
-const DEFAULT_SORT_CONFIG = { key: "deadline", order: "asc" };
 const EMPTY_APP_STATE = {
   tasks: [],
   tagOptions: [],
@@ -42,22 +39,7 @@ const readPersistedUiSettings = () => {
 
     const parsed = JSON.parse(raw);
     return {
-      viewType: parsed.viewType === "month" ? "month" : "week",
-      taskListFilterConfig: {
-        statuses: Array.isArray(parsed.taskListFilterConfig?.statuses) ? parsed.taskListFilterConfig.statuses : [],
-        tags: Array.isArray(parsed.taskListFilterConfig?.tags) ? parsed.taskListFilterConfig.tags : []
-      },
-      boardFilterConfig: {
-        statuses: Array.isArray(parsed.boardFilterConfig?.statuses) ? parsed.boardFilterConfig.statuses : [],
-        tags: Array.isArray(parsed.boardFilterConfig?.tags) ? parsed.boardFilterConfig.tags : []
-      },
-      sortConfig:
-        parsed.sortConfig?.key && ["deadline", "scheduledCount", "title", "status"].includes(parsed.sortConfig.key)
-          ? {
-              key: parsed.sortConfig.key,
-              order: parsed.sortConfig.order === "desc" ? "desc" : "asc"
-            }
-          : undefined
+      viewType: parsed.viewType === "month" ? "month" : "week"
     };
   } catch (error) {
     console.warn("Failed to read UI settings", error);
@@ -106,6 +88,10 @@ const normalizeTaskRecord = (task, index = 0) => ({
   deadline: task.deadline || null,
   description: task.description || "",
   scheduledDate: task.scheduledDate || null,
+  scheduledTime: task.scheduledTime || null,
+  scheduledDurationMinutes: Number.isFinite(Number(task.scheduledDurationMinutes))
+    ? Math.max(15, Number(task.scheduledDurationMinutes))
+    : 60,
   completed: Boolean(task.completed),
   sourceWorkflowId: task.sourceWorkflowId || null,
   workflowRunKey: task.workflowRunKey || null
@@ -212,52 +198,56 @@ function AuthGate({ authState, onGoogleSignIn, onSignIn, onCreateAccount }) {
   };
 
   return (
-    <div className="flex h-screen items-center justify-center bg-[#F8F9FB] px-6">
-      <form onSubmit={handleSubmit} className="w-full max-w-[380px] rounded-md border border-slate-200 bg-white p-6 shadow-sm">
-        <div className="mb-6">
-          <h1 className="text-xl font-semibold text-slate-900">TimeMapTodo</h1>
-          <p className="mt-2 text-sm leading-6 text-slate-500">
-            Sign in with Google to sync tasks securely with Firebase.
-          </p>
+    <div className="flex h-screen items-center justify-center bg-[#15161A] px-6">
+      <form
+        onSubmit={handleSubmit}
+        className="w-full max-w-[420px] rounded-lg border border-[#2A2D35] bg-[#1C1D22] p-7 shadow-[0_24px_80px_rgba(0,0,0,0.32)]"
+      >
+        <div className="mb-7">
+          <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-md bg-gradient-to-br from-[#0CCB8E] to-[#0A9F74] text-sm font-semibold text-white shadow-[0_12px_34px_rgba(12,203,142,0.34)]">
+            TM
+          </div>
+          <h1 className="text-2xl font-semibold text-[#F4F4F5]">TimeMapTodo</h1>
+          <p className="mt-2 text-sm leading-6 text-[#A1A1AA]">Sign in to keep tasks synced across your devices.</p>
         </div>
 
         <button
           type="button"
           onClick={handleGoogleSignIn}
           disabled={isGoogleSubmitting || isSubmitting || authState.status === "loading"}
-          className="mb-4 flex w-full items-center justify-center gap-3 rounded-md border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-800 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+          className="mb-4 flex w-full items-center justify-center gap-3 rounded-md bg-[#F4F4F5] px-4 py-3 text-sm font-semibold text-[#15161A] transition hover:bg-white disabled:cursor-not-allowed disabled:bg-[#52525B] disabled:text-[#A1A1AA]"
         >
-          <span className="flex h-5 w-5 items-center justify-center rounded-full border border-slate-200 text-xs font-bold text-blue-600">
+          <span className="flex h-5 w-5 items-center justify-center rounded-full bg-white text-xs font-bold text-[#0CCB8E]">
             G
           </span>
           {isGoogleSubmitting ? "Opening Google..." : "Continue with Google"}
         </button>
 
-        <div className="mb-4 flex items-center gap-3 text-xs font-medium text-slate-400">
-          <div className="h-px flex-1 bg-slate-200" />
+        <div className="mb-4 flex items-center gap-3 text-xs font-medium text-[#71717A]">
+          <div className="h-px flex-1 bg-[#2A2D35]" />
           Email backup
-          <div className="h-px flex-1 bg-slate-200" />
+          <div className="h-px flex-1 bg-[#2A2D35]" />
         </div>
 
         <label className="mb-4 block">
-          <span className="mb-1 block text-sm font-medium text-slate-700">Email</span>
+          <span className="mb-1 block text-sm font-medium text-[#D4D4D8]">Email</span>
           <input
             type="email"
             value={email}
             onChange={(event) => setEmail(event.target.value)}
-            className="w-full rounded-md border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+            className="w-full rounded-md border border-[#34363D] bg-[#15161A] px-3 py-2 text-sm text-[#F4F4F5] outline-none focus:border-[#0CCB8E] focus:ring-2 focus:ring-[#0CCB8E]/25"
             autoComplete="email"
             required
           />
         </label>
 
         <label className="mb-4 block">
-          <span className="mb-1 block text-sm font-medium text-slate-700">Password</span>
+          <span className="mb-1 block text-sm font-medium text-[#D4D4D8]">Password</span>
           <input
             type="password"
             value={password}
             onChange={(event) => setPassword(event.target.value)}
-            className="w-full rounded-md border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+            className="w-full rounded-md border border-[#34363D] bg-[#15161A] px-3 py-2 text-sm text-[#F4F4F5] outline-none focus:border-[#0CCB8E] focus:ring-2 focus:ring-[#0CCB8E]/25"
             autoComplete={mode === "create" ? "new-password" : "current-password"}
             minLength={6}
             required
@@ -265,7 +255,7 @@ function AuthGate({ authState, onGoogleSignIn, onSignIn, onCreateAccount }) {
         </label>
 
         {errorMessage || authState.error ? (
-          <div className="mb-4 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+          <div className="mb-4 rounded-md border border-red-500/25 bg-red-500/10 px-3 py-2 text-sm text-red-200">
             {errorMessage || authState.error}
           </div>
         ) : null}
@@ -273,7 +263,7 @@ function AuthGate({ authState, onGoogleSignIn, onSignIn, onCreateAccount }) {
         <button
           type="submit"
           disabled={isSubmitting || isGoogleSubmitting || authState.status === "loading"}
-          className="w-full rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:bg-slate-400"
+          className="w-full rounded-md bg-[#0CCB8E] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#10B981] disabled:cursor-not-allowed disabled:bg-[#52525B]"
         >
           {isSubmitting ? "Please wait..." : mode === "create" ? "Create account" : "Sign in"}
         </button>
@@ -284,12 +274,75 @@ function AuthGate({ authState, onGoogleSignIn, onSignIn, onCreateAccount }) {
             setMode((current) => (current === "create" ? "signin" : "create"));
             setErrorMessage("");
           }}
-          className="mt-3 w-full rounded-md border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-50"
+          className="mt-3 w-full rounded-md border border-[#34363D] px-4 py-2 text-sm font-medium text-[#34D399] transition hover:bg-[#25272F]"
         >
           {mode === "create" ? "Use an existing account" : "Create a new account"}
         </button>
+
+        <div className="mt-5 flex items-center gap-2 rounded-md border border-[#34363D] bg-[#15161A] px-3 py-2 text-xs text-[#A1A1AA]">
+          <ShieldCheck className="h-4 w-4 shrink-0 text-[#0CCB8E]" />
+          <span>Google authentication protects each user's private workspace.</span>
+        </div>
       </form>
     </div>
+  );
+}
+
+function AppHeader({ user }) {
+  return (
+    <header className="flex h-14 shrink-0 items-center justify-between border-b border-[#20242A] bg-[#0B0E11]/90 px-4 backdrop-blur">
+      <div className="flex min-w-0 items-center gap-4">
+        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-[#0CCB8E] to-[#0A9F74] text-sm font-bold text-[#06100D] shadow-[0_10px_30px_rgba(12,203,142,0.22)]">
+          TM
+        </div>
+        <div className="min-w-0">
+          <h1 className="text-lg font-semibold leading-6 tracking-tight text-[#F7F7F8]">TimeMapTodo</h1>
+        </div>
+      </div>
+
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          className="flex h-9 w-9 items-center justify-center rounded-lg text-[#8B949E] transition-colors hover:bg-[#161A1F] hover:text-[#F7F7F8]"
+          title="Notifications"
+        >
+          <Bell className="h-4 w-4" />
+        </button>
+        <button
+          type="button"
+          className="flex h-9 w-9 items-center justify-center rounded-lg text-[#8B949E] transition-colors hover:bg-[#161A1F] hover:text-[#F7F7F8]"
+          title="Settings"
+        >
+          <Settings className="h-4 w-4" />
+        </button>
+        {user ? (
+          <div className="group relative">
+            <button className="flex max-w-[250px] items-center gap-2 rounded-lg px-3 py-1.5 text-sm font-medium text-[#8B949E] transition hover:bg-[#161A1F] hover:text-[#F7F7F8]">
+              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#161A1F]">
+                <User className="h-4 w-4" />
+              </span>
+              <span className="hidden truncate sm:block">{user.email || "Signed in"}</span>
+              <ChevronDown className="h-4 w-4 shrink-0 text-[#9CA3AF]" />
+            </button>
+            <div className="invisible absolute right-0 top-11 z-40 w-72 rounded-lg border border-[#20242A] bg-[#111418] p-2 opacity-0 shadow-lg transition group-hover:visible group-hover:opacity-100">
+              <div className="px-3 py-2">
+                <div className="text-xs font-medium text-[#71717A]">Signed in as</div>
+                <div className="mt-1 truncate text-sm font-medium text-[#F7F7F8]">{user.email || "Signed in"}</div>
+              </div>
+              <div className="my-1 border-t border-[#34363D]" />
+              <button
+                type="button"
+                onClick={signOutFirebase}
+                className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm font-medium text-[#0CCB8E] transition hover:bg-[#161A1F] hover:text-[#34D399]"
+              >
+                <LogOut className="h-4 w-4" />
+                Sign out
+              </button>
+            </div>
+          </div>
+        ) : null}
+      </div>
+    </header>
   );
 }
 
@@ -305,13 +358,6 @@ function App() {
   const [selectedTaskId, setSelectedTaskId] = useState(null);
   const [baseDate, setBaseDate] = useState(new Date());
   const [viewType, setViewType] = useState(persistedUiSettings.viewType || "week");
-  const [taskListFilterConfig, setTaskListFilterConfig] = useState(
-    persistedUiSettings.taskListFilterConfig || DEFAULT_TASK_LIST_FILTER_CONFIG
-  );
-  const [boardFilterConfig, setBoardFilterConfig] = useState(
-    persistedUiSettings.boardFilterConfig || DEFAULT_BOARD_FILTER_CONFIG
-  );
-  const [sortConfig, setSortConfig] = useState(persistedUiSettings.sortConfig || DEFAULT_SORT_CONFIG);
   const [editingTaskId, setEditingTaskId] = useState(null);
   const [isInspectorMounted, setIsInspectorMounted] = useState(false);
   const [isInspectorVisible, setIsInspectorVisible] = useState(false);
@@ -322,7 +368,7 @@ function App() {
   const inspectorCloseTimeoutRef = useRef(null);
   const remoteApplyingRef = useRef(false);
   const [isLoaded, setIsLoaded] = useState(false);
-  const [dataBackend, setDataBackend] = useState(() => (isFirebaseConfigured() ? "firebase" : "local"));
+  const [, setDataBackend] = useState(() => (isFirebaseConfigured() ? "firebase" : "local"));
   const [authState, setAuthState] = useState(() => ({
     status: isFirebaseConfigured() ? "loading" : "disabled",
     user: null,
@@ -470,7 +516,7 @@ function App() {
       setEditingTaskId(null);
       setInspectorShouldFocusTitle(false);
       inspectorCloseTimeoutRef.current = null;
-    }, 240);
+    }, 340);
   }, []);
 
   useEffect(() => {
@@ -521,10 +567,7 @@ function App() {
     if (!isLoaded || typeof window === "undefined") return;
 
     const uiSettings = {
-      viewType,
-      taskListFilterConfig,
-      boardFilterConfig,
-      sortConfig
+      viewType
     };
 
     try {
@@ -532,7 +575,7 @@ function App() {
     } catch (error) {
       console.warn("Failed to save UI settings", error);
     }
-  }, [viewType, taskListFilterConfig, boardFilterConfig, sortConfig, isLoaded]);
+  }, [viewType, isLoaded]);
 
   useEffect(() => {
     if (!isLoaded) return;
@@ -604,24 +647,56 @@ function App() {
     [selectedTaskId]
   );
 
-  const handleScheduleTask = useCallback((taskId, dateKey) => {
+  const handleDeleteTaskFromInspector = useCallback(
+    (taskId) => {
+      closeInspector();
+      handleDeleteTask(taskId);
+    },
+    [closeInspector, handleDeleteTask]
+  );
+
+  const handleScheduleTask = useCallback((taskId, dateKey, scheduledTime = null, scheduledDurationMinutes = undefined) => {
     setAppState((prev) => ({
       ...prev,
-      tasks: prev.tasks.map((task) => (task.id === taskId ? { ...task, scheduledDate: dateKey } : task))
+      tasks: prev.tasks.map((task) =>
+        task.id === taskId
+          ? {
+              ...task,
+              scheduledDate: dateKey,
+              scheduledTime,
+              scheduledDurationMinutes:
+                scheduledDurationMinutes === undefined
+                  ? task.scheduledDurationMinutes || 60
+                  : Math.max(15, Number(scheduledDurationMinutes) || 60)
+            }
+          : task
+      )
     }));
   }, []);
 
-  const handleMoveTask = useCallback((taskId, dateKey) => {
+  const handleMoveTask = useCallback((taskId, dateKey, scheduledTime = null, scheduledDurationMinutes = undefined) => {
     setAppState((prev) => ({
       ...prev,
-      tasks: prev.tasks.map((task) => (task.id === taskId ? { ...task, scheduledDate: dateKey } : task))
+      tasks: prev.tasks.map((task) =>
+        task.id === taskId
+          ? {
+              ...task,
+              scheduledDate: dateKey,
+              scheduledTime,
+              scheduledDurationMinutes:
+                scheduledDurationMinutes === undefined
+                  ? task.scheduledDurationMinutes || 60
+                  : Math.max(15, Number(scheduledDurationMinutes) || 60)
+            }
+          : task
+      )
     }));
   }, []);
 
   const handleUnscheduleTask = useCallback((taskId) => {
     setAppState((prev) => ({
       ...prev,
-      tasks: prev.tasks.map((task) => (task.id === taskId ? { ...task, scheduledDate: null } : task))
+      tasks: prev.tasks.map((task) => (task.id === taskId ? { ...task, scheduledDate: null, scheduledTime: null } : task))
     }));
   }, []);
 
@@ -651,14 +726,6 @@ function App() {
         tags: (task.tags || []).filter((tag) => tag !== tagName)
       }))
     }));
-    setTaskListFilterConfig((prev) => ({
-      ...prev,
-      tags: (prev.tags || []).filter((tag) => tag !== tagName)
-    }));
-    setBoardFilterConfig((prev) => ({
-      ...prev,
-      tags: (prev.tags || []).filter((tag) => tag !== tagName)
-    }));
   }, []);
 
   const handleRenameTagOption = useCallback((oldTagName, nextTagName) => {
@@ -679,14 +746,6 @@ function App() {
       };
     });
 
-    setTaskListFilterConfig((prev) => ({
-      ...prev,
-      tags: (prev.tags || []).map((tag) => (tag === oldTagName ? trimmedNext : tag))
-    }));
-    setBoardFilterConfig((prev) => ({
-      ...prev,
-      tags: (prev.tags || []).map((tag) => (tag === oldTagName ? trimmedNext : tag))
-    }));
   }, []);
 
   const handleCreateWorkflow = useCallback((workflowDraft) => {
@@ -737,30 +796,8 @@ function App() {
     };
   });
 
-  const filterTasks = useCallback((sourceTasks, filterConfig) => {
-    return sourceTasks
-      .filter((task) => {
-        if (!filterConfig.statuses?.length) return true;
-        return filterConfig.statuses.includes(task.status.toLowerCase());
-      })
-      .filter((task) => {
-        if (!filterConfig.tags?.length) return true;
-        return filterConfig.tags.some((tag) => task.tags?.includes(tag));
-      });
-  }, []);
-
-  const filteredTasks = filterTasks(tasksWithStats, taskListFilterConfig).sort((a, b) => {
-    const order = sortConfig.order === "asc" ? 1 : -1;
-
-    if (sortConfig.key === "deadline") return (a.deadline || "").localeCompare(b.deadline || "") * order;
-    if (sortConfig.key === "scheduledCount") return (a.scheduledCount - b.scheduledCount) * order;
-    if (sortConfig.key === "title") return (a.title || "").localeCompare(b.title || "") * order;
-    if (sortConfig.key === "status") return a.status.localeCompare(b.status) * order;
-    return 0;
-  });
-
-  const visiblePoolTasks = filteredTasks.filter((task) => !task.scheduledDate);
-  const boardFilteredTasks = filterTasks(tasksWithStats.filter((task) => task.scheduledDate), boardFilterConfig);
+  const visiblePoolTasks = tasksWithStats.filter((task) => !task.scheduledDate);
+  const boardFilteredTasks = tasksWithStats.filter((task) => task.scheduledDate);
   const scheduledTasksByDate = groupTasksByScheduledDate(boardFilteredTasks);
   const availableTags = appState.tagOptions;
   const editingTaskData = editingTaskId ? appState.tasks.find((task) => task.id === editingTaskId) : null;
@@ -792,13 +829,19 @@ function App() {
       );
     }
 
-    return <div className="flex h-screen items-center justify-center bg-[#F8F9FB] font-medium text-slate-500">Loading...</div>;
+    return <div className="flex h-screen items-center justify-center bg-[#06080A] font-medium text-[#8B949E]">Loading...</div>;
   }
 
   return (
-    <MainLayout>
-      <div className="flex h-full min-w-0 flex-1 gap-6">
-        <div className="w-[360px] min-w-[320px] shrink-0">
+    <MainLayout
+      header={
+        <AppHeader
+          user={authState.user}
+        />
+      }
+    >
+      <div className="relative flex h-full min-w-0 flex-1">
+        <div className="w-72 min-w-72 shrink-0 border-r border-[#20242A] bg-[#06080A] xl:w-80 xl:min-w-80">
           <TaskPool
             tasks={visiblePoolTasks}
             workflows={appState.workflows}
@@ -815,26 +858,21 @@ function App() {
             onOpenDetail={handleOpenTaskDetail}
             onHoverTask={handleHoverTask}
             onUnscheduleTask={handleUnscheduleTask}
-            filterConfig={taskListFilterConfig}
-            setFilterConfig={setTaskListFilterConfig}
-            sortConfig={sortConfig}
-            setSortConfig={setSortConfig}
             availableTags={availableTags}
-            onCreateTag={handleCreateTagOption}
-            onDeleteTag={handleDeleteTagOption}
-            onRenameTag={handleRenameTagOption}
           />
         </div>
 
         {isInspectorMounted && editingTaskData ? (
           <div
-            className={`h-full shrink-0 overflow-hidden transition-[width,opacity,transform,margin] duration-300 ease-out ${
-              isInspectorVisible
-                ? "w-[380px] opacity-100 translate-x-0 mx-0"
-                : "w-0 opacity-0 -translate-x-4 -mx-6 pointer-events-none"
+            className={`absolute inset-y-0 left-0 z-40 h-full overflow-visible transition-[width] duration-[340ms] ease-[cubic-bezier(0.22,1,0.36,1)] 2xl:static 2xl:shrink-0 ${
+              isInspectorVisible ? "w-72 pointer-events-auto xl:w-80 2xl:w-[380px]" : "w-0 pointer-events-none"
             }`}
           >
-            <div className="h-full w-[380px]">
+            <div
+              className={`h-full w-72 xl:w-80 2xl:w-[380px] transition-[opacity,transform] duration-[340ms] ease-[cubic-bezier(0.22,1,0.36,1)] ${
+                isInspectorVisible ? "translate-x-0 opacity-100" : "translate-x-full opacity-0"
+              }`}
+            >
               <HandDrawnPopup
                 key={editingTaskData.id}
                 task={editingTaskData}
@@ -844,13 +882,14 @@ function App() {
                 onRenameTag={handleRenameTagOption}
                 onClose={closeInspector}
                 onUpdate={handleUpdateTaskDetails}
+                onDelete={handleDeleteTaskFromInspector}
                 autoFocusTitle={inspectorShouldFocusTitle}
               />
             </div>
           </div>
         ) : null}
 
-        <div className="min-w-0 flex-1 overflow-hidden rounded-md border border-slate-200 bg-white p-6 shadow-sm">
+        <div className="min-w-0 flex-1 overflow-hidden bg-[#06080A]">
           <CalendarArea
             baseDate={baseDate}
             setBaseDate={setBaseDate}
@@ -866,25 +905,15 @@ function App() {
             onToggleTaskComplete={handleToggleTaskComplete}
             onHoverTask={handleHoverTask}
             onOpenDetail={handleOpenTaskDetail}
-            boardFilterConfig={boardFilterConfig}
-            setBoardFilterConfig={setBoardFilterConfig}
-            availableTags={availableTags}
-            onCreateTag={handleCreateTagOption}
-            onDeleteTag={handleDeleteTagOption}
-            onRenameTag={handleRenameTagOption}
           />
         </div>
-      </div>
-      <div className="fixed bottom-3 right-4 rounded-full border border-slate-200 bg-white/90 px-3 py-1 text-xs font-medium text-slate-500 shadow-sm backdrop-blur">
-        {dataBackend === "firebase" ? `Firebase: ${getFirebaseWorkspaceId()} / ${authState.user?.email || "signed in"}` : "Local only"}
-        {authState.user ? (
-          <button type="button" onClick={signOutFirebase} className="ml-2 border-l border-slate-200 pl-2 text-slate-700 hover:text-slate-950">
-            Sign out
-          </button>
-        ) : null}
       </div>
     </MainLayout>
   );
 }
 
 export default App;
+
+
+
+

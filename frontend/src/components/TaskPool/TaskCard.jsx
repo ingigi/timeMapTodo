@@ -1,4 +1,4 @@
-import clsx from "clsx";
+﻿import clsx from "clsx";
 import { useEffect, useRef, useState } from "react";
 import { GripVertical, Trash2 } from "lucide-react";
 import { attachDragPreview } from "../../utils/dragPreview";
@@ -31,6 +31,7 @@ export default function TaskCard({
   const { id, title, color, status = "NotStarted", deadline } = task;
   const titleInputRef = useRef(null);
   const dragCleanupRef = useRef(null);
+  const suppressClickRef = useRef(false);
   const [isEditingTitle, setIsEditingTitle] = useState(() => !title?.trim() && !suppressInlineTitleAutoEdit);
   const [isDragging, setIsDragging] = useState(false);
   const palette = getTaskPalette(color);
@@ -53,7 +54,15 @@ export default function TaskCard({
       )}
       onMouseEnter={() => onHoverTask(id)}
       onMouseLeave={() => onHoverTask(null)}
-      onClick={() => onOpenDetail(id)}
+      onClick={(event) => {
+        if (suppressClickRef.current) {
+          event.preventDefault();
+          event.stopPropagation();
+          return;
+        }
+
+        onOpenDetail(id);
+      }}
       style={
         isRelated
           ? {
@@ -73,11 +82,13 @@ export default function TaskCard({
         }
 
         setIsDragging(true);
+        suppressClickRef.current = true;
         const payload = {
           dragType: "new",
           taskId: id,
           dragTitle: title || "タスク",
           dragColor: color || "#94a3b8",
+          completed: isCompleted,
           dragDeadline: deadline || ""
         };
         event.dataTransfer.effectAllowed = "copy";
@@ -90,6 +101,8 @@ export default function TaskCard({
         event.dataTransfer.setData("dragColor", color || "#94a3b8");
         setCurrentDrag(payload);
         dragCleanupRef.current = attachDragPreview(event, {
+          hideNativePreview: true,
+          sourceElement: event.currentTarget,
           title: title || "タスク",
           color: color || "#94a3b8",
           completed: isCompleted
@@ -100,6 +113,9 @@ export default function TaskCard({
         clearCurrentDrag();
         dragCleanupRef.current?.();
         dragCleanupRef.current = null;
+        window.setTimeout(() => {
+          suppressClickRef.current = false;
+        }, 120);
       }}
     >
       <div className="flex items-start gap-3">
@@ -150,3 +166,7 @@ export default function TaskCard({
     </div>
   );
 }
+
+
+
+

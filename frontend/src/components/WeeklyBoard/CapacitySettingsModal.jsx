@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { X } from 'lucide-react';
 
-const DAY_NAMES = ['月曜日', '火曜日', '水曜日', '木曜日', '金曜日', '土曜日', '日曜日'];
+const DAY_NAMES = ["月曜日", "火曜日", "水曜日", "木曜日", "金曜日", "土曜日", "日曜日"];
 
 export default function CapacitySettingsModal({ initialCapacities, onSave, onClose }) {
   const [capacities, setCapacities] = useState([...initialCapacities]);
@@ -19,7 +19,7 @@ export default function CapacitySettingsModal({ initialCapacities, onSave, onClo
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 p-4 backdrop-blur-sm"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) {
           onClose();
@@ -27,25 +27,26 @@ export default function CapacitySettingsModal({ initialCapacities, onSave, onClo
       }}
     >
       <div
-        className="relative w-full max-w-md rounded-lg bg-white p-6 shadow-xl animate-in fade-in zoom-in-95 duration-200"
+        className="relative flex max-h-[calc(100vh-32px)] w-full max-w-md flex-col overflow-hidden rounded-2xl border border-[#34363D] bg-[#1C1D22] shadow-2xl animate-in fade-in zoom-in-95 duration-200"
         onMouseDown={(e) => e.stopPropagation()}
       >
         <button 
           onClick={onClose}
-          className="absolute right-4 top-4 p-1 text-slate-400 hover:text-slate-600 rounded-full hover:bg-slate-100 transition-colors"
+          className="absolute right-4 top-4 rounded-md p-2 text-[#A1A1AA] transition-colors hover:bg-[#25272F] hover:text-[#F4F4F5]"
         >
           <X className="h-5 w-5" />
         </button>
         
-        <h2 className="mb-2 text-xl font-bold text-slate-800">キャパシティ設定</h2>
-        <p className="mb-6 text-sm text-slate-500">
-          1日あたりのタスクに利用可能な最大時間を設定します。
-        </p>
+        <div className="border-b border-[#34363D] px-6 py-5">
+          <div className="text-xs font-semibold uppercase tracking-[0.16em] text-[#71717A]">Capacity</div>
+          <h2 className="mt-1 text-xl font-semibold text-[#F4F4F5]">キャパシティ設定</h2>
+          <p className="mt-2 text-sm text-[#A1A1AA]">1日あたりのタスクに利用可能な最大時間を設定します。</p>
+        </div>
 
-        <div className="space-y-3 mb-8">
+        <div className="space-y-3 px-6 py-5">
           {DAY_NAMES.map((day, idx) => (
             <div key={day} className="flex items-center justify-between">
-              <span className="text-sm font-semibold text-slate-700">{day}</span>
+              <span className="text-sm font-semibold text-[#F4F4F5]">{day}</span>
               <div className="flex items-center gap-2">
                 <input
                   type="number"
@@ -53,24 +54,24 @@ export default function CapacitySettingsModal({ initialCapacities, onSave, onClo
                   max="24"
                   value={capacities[idx]}
                   onChange={(e) => handleChange(idx, e.target.value)}
-                  className="w-16 rounded-md border border-slate-300 px-2 py-1.5 text-center text-sm font-semibold text-slate-800 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  className="w-16 rounded-lg border border-[#34363D] bg-[#15161A] px-2 py-1.5 text-center text-sm font-semibold text-[#F4F4F5] outline-none transition focus:border-[#0CCB8E] focus:ring-2 focus:ring-[#0CCB8E]/25"
                 />
-                <span className="text-sm font-medium text-slate-500 w-8">h/d</span>
+                <span className="w-8 text-sm font-medium text-[#A1A1AA]">h/d</span>
               </div>
             </div>
           ))}
         </div>
 
-        <div className="flex items-center justify-end gap-3">
+        <div className="flex items-center justify-end gap-3 border-t border-[#34363D] px-6 py-4">
           <button 
             onClick={onClose}
-            className="rounded-md px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100 transition-colors"
+            className="rounded-lg px-4 py-2.5 text-sm font-semibold text-[#A1A1AA] transition-colors hover:bg-[#25272F] hover:text-[#F4F4F5]"
           >
             キャンセル
           </button>
           <button 
             onClick={handleSave}
-            className="rounded-md bg-blue-600 px-6 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-700 transition-colors"
+            className="rounded-lg bg-[#0CCB8E] px-5 py-2.5 text-sm font-semibold text-[#06100D] shadow-sm transition-colors hover:bg-[#10B981]"
           >
             変更を保存
           </button>
@@ -79,3 +80,7 @@ export default function CapacitySettingsModal({ initialCapacities, onSave, onClo
     </div>
   );
 }
+
+
+
+
