@@ -29,6 +29,7 @@ const GOOGLE_CALENDAR_REFRESH_INTERVAL_MS = 60 * 1000;
 const DEFAULT_TASK_SIDEBAR_WIDTH = 320;
 const MIN_TASK_SIDEBAR_WIDTH = 260;
 const MAX_TASK_SIDEBAR_WIDTH = 560;
+const COLLAPSED_TASK_SIDEBAR_RAIL_WIDTH = 18;
 const GOOGLE_SIGN_IN_TIMEOUT_MS = 90 * 1000;
 
 const EMPTY_APP_STATE = {
@@ -62,6 +63,7 @@ const readPersistedUiSettings = () => {
     const sidebarWidth = Number(parsed.taskSidebarWidth);
     return {
       viewType: parsed.viewType === "month" ? "month" : "week",
+      taskSidebarCollapsed: parsed.taskSidebarCollapsed === true,
       taskSidebarWidth:
         Number.isFinite(sidebarWidth) && sidebarWidth >= MIN_TASK_SIDEBAR_WIDTH && sidebarWidth <= MAX_TASK_SIDEBAR_WIDTH
           ? sidebarWidth
@@ -547,6 +549,11 @@ function App() {
   const [baseDate, setBaseDate] = useState(new Date());
   const [viewType, setViewType] = useState(persistedUiSettings.viewType || "week");
   const [taskSidebarWidth, setTaskSidebarWidth] = useState(persistedUiSettings.taskSidebarWidth || DEFAULT_TASK_SIDEBAR_WIDTH);
+  const [isTaskSidebarCollapsed, setIsTaskSidebarCollapsed] = useState(Boolean(persistedUiSettings.taskSidebarCollapsed));
+  const [isTaskSidebarPeeking, setIsTaskSidebarPeeking] = useState(false);
+  const [isTaskSidebarDragPeeking, setIsTaskSidebarDragPeeking] = useState(false);
+  const [isTaskSidebarInspectorPinned, setIsTaskSidebarInspectorPinned] = useState(false);
+  const [isTaskSidebarAnimating, setIsTaskSidebarAnimating] = useState(false);
   const [isResizingTaskSidebar, setIsResizingTaskSidebar] = useState(false);
   const [editingTaskId, setEditingTaskId] = useState(null);
   const [isInspectorMounted, setIsInspectorMounted] = useState(false);
@@ -561,6 +568,9 @@ function App() {
   const [googleCalendarRefreshVersion, setGoogleCalendarRefreshVersion] = useState(0);
   const saveTimeoutRef = useRef(null);
   const inspectorCloseTimeoutRef = useRef(null);
+  const taskSidebarAnimationTimeoutRef = useRef(null);
+  const taskSidebarContainerRef = useRef(null);
+  const droppedOnPeekingSidebarRef = useRef(false);
   const remoteApplyingRef = useRef(false);
   const [isLoaded, setIsLoaded] = useState(false);
   const [, setDataBackend] = useState(() => (isFirebaseConfigured() ? "firebase" : "local"));
@@ -692,16 +702,28 @@ function App() {
       inspectorCloseTimeoutRef.current = null;
     }
 
+    if (isTaskSidebarCollapsed && (options.pinTaskSidebar || isTaskSidebarPeeking || isTaskSidebarDragPeeking)) {
+      setIsTaskSidebarInspectorPinned(true);
+      setIsTaskSidebarPeeking(true);
+      setIsTaskSidebarDragPeeking(false);
+    }
+
     setEditingTaskId(taskId);
     setInspectorShouldFocusTitle(Boolean(options.focusTitle));
     setIsInspectorMounted(true);
     requestAnimationFrame(() => {
       setIsInspectorVisible(true);
     });
-  }, []);
+  }, [isTaskSidebarCollapsed, isTaskSidebarDragPeeking, isTaskSidebarPeeking]);
 
   const closeInspector = useCallback(() => {
     setIsInspectorVisible(false);
+    setIsTaskSidebarInspectorPinned(false);
+    if (isTaskSidebarCollapsed) {
+      setIsTaskSidebarPeeking(false);
+      setIsTaskSidebarDragPeeking(false);
+    }
+
     if (inspectorCloseTimeoutRef.current) {
       clearTimeout(inspectorCloseTimeoutRef.current);
     }
@@ -712,6 +734,23 @@ function App() {
       setInspectorShouldFocusTitle(false);
       inspectorCloseTimeoutRef.current = null;
     }, 340);
+  }, [isTaskSidebarCollapsed]);
+
+  const toggleTaskSidebar = useCallback(() => {
+    if (taskSidebarAnimationTimeoutRef.current) {
+      clearTimeout(taskSidebarAnimationTimeoutRef.current);
+    }
+
+    setIsTaskSidebarAnimating(true);
+    setIsTaskSidebarCollapsed((current) => !current);
+    setIsTaskSidebarPeeking(false);
+    setIsTaskSidebarDragPeeking(false);
+    setIsTaskSidebarInspectorPinned(false);
+
+    taskSidebarAnimationTimeoutRef.current = setTimeout(() => {
+      setIsTaskSidebarAnimating(false);
+      taskSidebarAnimationTimeoutRef.current = null;
+    }, 820);
   }, []);
 
   useEffect(() => {
@@ -719,8 +758,57 @@ function App() {
       if (inspectorCloseTimeoutRef.current) {
         clearTimeout(inspectorCloseTimeoutRef.current);
       }
+      if (taskSidebarAnimationTimeoutRef.current) {
+        clearTimeout(taskSidebarAnimationTimeoutRef.current);
+      }
     };
   }, []);
+
+  useEffect(() => {
+    if (!isTaskSidebarDragPeeking) return undefined;
+
+    const clearDragPeek = () => {
+      setIsTaskSidebarDragPeeking(false);
+      setIsTaskSidebarPeeking(false);
+    };
+
+    const handleDrop = (event) => {
+      if (taskSidebarContainerRef.current?.contains(event.target)) {
+        droppedOnPeekingSidebarRef.current = true;
+        setIsTaskSidebarDragPeeking(false);
+        setIsTaskSidebarPeeking(true);
+        return;
+      }
+
+      clearDragPeek();
+    };
+
+    const handleDragEnd = () => {
+      if (droppedOnPeekingSidebarRef.current) {
+        droppedOnPeekingSidebarRef.current = false;
+        setIsTaskSidebarDragPeeking(false);
+        setIsTaskSidebarPeeking(true);
+        return;
+      }
+
+      clearDragPeek();
+    };
+
+    const handleDragMove = (event) => {
+      if (event.clientX > taskSidebarWidth + 24) {
+        clearDragPeek();
+      }
+    };
+
+    window.addEventListener("dragover", handleDragMove);
+    window.addEventListener("dragend", handleDragEnd);
+    window.addEventListener("drop", handleDrop);
+    return () => {
+      window.removeEventListener("dragover", handleDragMove);
+      window.removeEventListener("dragend", handleDragEnd);
+      window.removeEventListener("drop", handleDrop);
+    };
+  }, [isTaskSidebarDragPeeking, taskSidebarWidth]);
 
   useEffect(() => {
     if (isLoaded) {
@@ -763,7 +851,8 @@ function App() {
 
     const uiSettings = {
       viewType,
-      taskSidebarWidth
+      taskSidebarWidth,
+      taskSidebarCollapsed: isTaskSidebarCollapsed
     };
 
     try {
@@ -771,7 +860,7 @@ function App() {
     } catch (error) {
       console.warn("Failed to save UI settings", error);
     }
-  }, [viewType, taskSidebarWidth, isLoaded]);
+  }, [viewType, taskSidebarWidth, isTaskSidebarCollapsed, isLoaded]);
 
   useEffect(() => {
     if (!isLoaded) return;
@@ -883,7 +972,7 @@ function App() {
   const handleCreateInlineTask = useCallback(() => {
     const newTaskId = `task_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
 
-    openInspector(newTaskId, { focusTitle: true });
+    openInspector(newTaskId, { focusTitle: true, pinTaskSidebar: true });
 
     setAppState((prev) => {
       const nextColor = TASK_COLORS[prev.tasks.length % TASK_COLORS.length];
@@ -1137,6 +1226,8 @@ function App() {
   }, []);
 
   const handleTaskSidebarResizeStart = useCallback((event) => {
+    if (isTaskSidebarCollapsed) return;
+
     event.preventDefault();
 
     const startX = event.clientX;
@@ -1162,10 +1253,20 @@ function App() {
 
     window.addEventListener("pointermove", handlePointerMove);
     window.addEventListener("pointerup", handlePointerUp);
-  }, [taskSidebarWidth]);
+  }, [isTaskSidebarCollapsed, taskSidebarWidth]);
 
   const hoveredTask = hoveredTaskId ? tasksWithStats.find((task) => task.id === hoveredTaskId) : null;
   const hoveredTaskDeadlineKey = hoveredTaskMeta?.deadlineDateKey || hoveredTask?.deadline || null;
+  const shouldShowTaskSidebar = !isTaskSidebarCollapsed || isTaskSidebarPeeking || isTaskSidebarDragPeeking || isTaskSidebarInspectorPinned;
+  const taskSidebarSlotMotionClass =
+    isTaskSidebarAnimating && !isTaskSidebarInspectorPinned
+      ? "transition-[width,min-width,max-width,flex-basis] duration-[760ms] ease-[cubic-bezier(0.16,1,0.3,1)]"
+      : "transition-none";
+  const taskSidebarMotionClass =
+    (isTaskSidebarAnimating || isTaskSidebarPeeking || isTaskSidebarDragPeeking) && !isTaskSidebarInspectorPinned
+      ? "transition-transform duration-[760ms] ease-[cubic-bezier(0.16,1,0.3,1)]"
+      : "transition-none";
+  const taskSidebarSlotWidth = isTaskSidebarCollapsed ? COLLAPSED_TASK_SIDEBAR_RAIL_WIDTH : taskSidebarWidth;
 
   if (!isLoaded) {
     if (isFirebaseConfigured() && authState.status !== "signed-in") {
@@ -1191,63 +1292,142 @@ function App() {
         />
       }
     >
-      <div className="relative flex h-full min-w-0 flex-1">
+      <div className="relative flex h-full min-w-0 flex-1 overflow-hidden">
         <div
-          className="shrink-0 bg-[#06080A]"
+          className={`relative z-40 shrink-0 overflow-visible bg-[#06080A] ${taskSidebarSlotMotionClass}`}
           style={{
-            width: `${taskSidebarWidth}px`,
-            minWidth: `${MIN_TASK_SIDEBAR_WIDTH}px`
+            width: `${taskSidebarSlotWidth}px`,
+            flexBasis: `${taskSidebarSlotWidth}px`,
+            minWidth: `${taskSidebarSlotWidth}px`,
+            maxWidth: `${taskSidebarSlotWidth}px`
           }}
         >
-          <TaskPool
-            tasks={visiblePoolTasks}
-            workflows={appState.workflows}
-            editingTaskId={editingTaskId}
-            selectedTaskId={selectedTaskId}
-            hoveredTaskId={hoveredTaskId}
-            onSelectTask={setSelectedTaskId}
-            onCreateInlineTask={handleCreateInlineTask}
-            onCreateWorkflow={handleCreateWorkflow}
-            onToggleWorkflowEnabled={handleToggleWorkflowEnabled}
-            onDeleteWorkflow={handleDeleteWorkflow}
-            onDeleteTask={handleDeleteTask}
-            onUpdateTaskTitle={handleUpdateTaskTitle}
-            onOpenDetail={handleOpenTaskDetail}
-            onHoverTask={handleHoverTask}
-            onUnscheduleTask={handleUnscheduleTask}
-            availableTags={availableTags}
-          />
+          <div
+            ref={taskSidebarContainerRef}
+            className={`absolute inset-y-0 left-0 z-10 bg-[#06080A] ${taskSidebarMotionClass} ${
+              isTaskSidebarCollapsed && shouldShowTaskSidebar ? "shadow-[18px_0_50px_rgba(0,0,0,0.32)]" : ""
+            } ${shouldShowTaskSidebar ? "translate-x-0" : "-translate-x-[110%] pointer-events-none"}`}
+            style={{
+              width: `${taskSidebarWidth}px`,
+              minWidth: `${MIN_TASK_SIDEBAR_WIDTH}px`
+            }}
+            onMouseEnter={() => {
+              if (isTaskSidebarCollapsed) setIsTaskSidebarPeeking(true);
+            }}
+            onMouseLeave={() => {
+              if (isTaskSidebarCollapsed && !isTaskSidebarDragPeeking && !isTaskSidebarInspectorPinned) setIsTaskSidebarPeeking(false);
+            }}
+            onDragEnter={(event) => {
+              if (!isTaskSidebarCollapsed) return;
+              event.preventDefault();
+              setIsTaskSidebarDragPeeking(true);
+              setIsTaskSidebarPeeking(true);
+            }}
+            onDragOver={(event) => {
+              if (!isTaskSidebarCollapsed) return;
+              event.preventDefault();
+              setIsTaskSidebarDragPeeking(true);
+              setIsTaskSidebarPeeking(true);
+            }}
+            onDrop={() => {
+              setIsTaskSidebarDragPeeking(false);
+              setIsTaskSidebarPeeking(true);
+              droppedOnPeekingSidebarRef.current = true;
+            }}
+          >
+            <TaskPool
+              tasks={visiblePoolTasks}
+              workflows={appState.workflows}
+              editingTaskId={editingTaskId}
+              selectedTaskId={selectedTaskId}
+              hoveredTaskId={hoveredTaskId}
+              onSelectTask={setSelectedTaskId}
+              onCreateInlineTask={handleCreateInlineTask}
+              onCreateWorkflow={handleCreateWorkflow}
+              onToggleWorkflowEnabled={handleToggleWorkflowEnabled}
+              onDeleteWorkflow={handleDeleteWorkflow}
+              onDeleteTask={handleDeleteTask}
+              onUpdateTaskTitle={handleUpdateTaskTitle}
+              onOpenDetail={handleOpenTaskDetail}
+              onHoverTask={handleHoverTask}
+              onUnscheduleTask={handleUnscheduleTask}
+              availableTags={availableTags}
+            />
+          </div>
+
+          {isTaskSidebarCollapsed ? (
+            <div
+              className="group absolute inset-y-0 left-0 z-0 cursor-pointer bg-[#06080A] transition-colors hover:bg-[#0C1116]"
+              style={{ width: `${COLLAPSED_TASK_SIDEBAR_RAIL_WIDTH}px` }}
+              onMouseEnter={() => setIsTaskSidebarPeeking(true)}
+              onMouseLeave={() => {
+                if (!isTaskSidebarDragPeeking && !isTaskSidebarInspectorPinned) setIsTaskSidebarPeeking(false);
+              }}
+              onDragEnter={(event) => {
+                event.preventDefault();
+                setIsTaskSidebarDragPeeking(true);
+                setIsTaskSidebarPeeking(true);
+              }}
+              onDragOver={(event) => {
+                event.preventDefault();
+                setIsTaskSidebarDragPeeking(true);
+                setIsTaskSidebarPeeking(true);
+              }}
+              onDragLeave={() => {}}
+              onClick={() => {
+                toggleTaskSidebar();
+              }}
+              role="button"
+              tabIndex={0}
+              aria-label="タスク一覧を開く"
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  toggleTaskSidebar();
+                }
+              }}
+            >
+              <div className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-[#20242A] transition-colors group-hover:bg-[#67D391]/70" />
+              <div
+                className={`absolute inset-y-0 left-0 w-[3px] rounded-r-full bg-[#67D391] shadow-[0_0_22px_rgba(103,211,145,0.45)] transition-opacity ${
+                  isTaskSidebarPeeking ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+                }`}
+              />
+            </div>
+          ) : null}
         </div>
 
-        <div
-          className={`group relative z-30 w-2 shrink-0 cursor-col-resize bg-[#06080A] transition-colors ${
-            isResizingTaskSidebar ? "bg-[#101820]" : "hover:bg-[#0C1116]"
-          }`}
-          onPointerDown={handleTaskSidebarResizeStart}
-          role="separator"
-          aria-orientation="vertical"
-          aria-label="タスク一覧の幅を変更"
-        >
+        {!isTaskSidebarCollapsed ? (
           <div
-            className={`absolute inset-y-0 left-1/2 w-px -translate-x-1/2 transition-colors ${
-              isResizingTaskSidebar ? "bg-[#67D391]" : "bg-[#20242A] group-hover:bg-[#67D391]/70"
+            className={`group relative z-30 w-2 shrink-0 cursor-col-resize bg-[#06080A] transition-colors ${
+              isResizingTaskSidebar ? "bg-[#101820]" : "hover:bg-[#0C1116]"
             }`}
-          />
-          <div
-            className={`absolute left-1/2 top-1/2 h-14 w-1 -translate-x-1/2 -translate-y-1/2 rounded-full transition-colors ${
-              isResizingTaskSidebar ? "bg-[#67D391]" : "bg-transparent group-hover:bg-[#67D391]/60"
-            }`}
-          />
-        </div>
+            onPointerDown={handleTaskSidebarResizeStart}
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="タスク一覧の幅を変更"
+          >
+            <div
+              className={`absolute inset-y-0 left-1/2 w-px -translate-x-1/2 transition-colors ${
+                isResizingTaskSidebar ? "bg-[#67D391]" : "bg-[#20242A] group-hover:bg-[#67D391]/70"
+              }`}
+            />
+            <div
+              className={`absolute left-1/2 top-1/2 h-14 w-1 -translate-x-1/2 -translate-y-1/2 rounded-full transition-colors ${
+                isResizingTaskSidebar ? "bg-[#67D391]" : "bg-transparent group-hover:bg-[#67D391]/60"
+              }`}
+            />
+          </div>
+        ) : null}
 
         {isInspectorMounted && editingTaskData ? (
           <div
-            className={`absolute inset-y-0 left-0 z-40 h-full overflow-visible transition-[width] duration-[340ms] ease-[cubic-bezier(0.22,1,0.36,1)] 2xl:static 2xl:shrink-0 ${
-              isInspectorVisible ? "w-72 pointer-events-auto xl:w-80 2xl:w-[380px]" : "w-0 pointer-events-none"
+            className={`absolute inset-y-0 right-0 z-50 h-full w-[min(720px,calc(100vw-48px))] overflow-visible ${
+              isInspectorVisible ? "pointer-events-auto" : "pointer-events-none"
             }`}
           >
             <div
-              className={`h-full w-72 xl:w-80 2xl:w-[380px] transition-[opacity,transform] duration-[340ms] ease-[cubic-bezier(0.22,1,0.36,1)] ${
+              className={`h-full w-[min(720px,calc(100vw-48px))] transition-[opacity,transform] duration-[340ms] ease-[cubic-bezier(0.22,1,0.36,1)] ${
                 isInspectorVisible ? "translate-x-0 opacity-100" : "translate-x-full opacity-0"
               }`}
             >
@@ -1287,6 +1467,8 @@ function App() {
             onToggleTaskComplete={handleToggleTaskComplete}
             onHoverTask={handleHoverTask}
             onOpenDetail={handleOpenTaskDetail}
+            isTaskSidebarCollapsed={isTaskSidebarCollapsed}
+            onToggleTaskSidebar={toggleTaskSidebar}
           />
         </div>
       </div>

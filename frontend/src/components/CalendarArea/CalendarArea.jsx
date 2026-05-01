@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import WeeklyBoard from "../WeeklyBoard/WeeklyBoard";
 import MonthlyBoard from "../MonthlyBoard/MonthlyBoard";
 import { addMonths, addWeeks, formatMonthLabel, startOfWeek, subMonths, subWeeks } from "../../utils/dateUtils";
@@ -22,7 +22,9 @@ export default function CalendarArea({
   onMoveTask,
   onToggleTaskComplete,
   onHoverTask,
-  onOpenDetail
+  onOpenDetail,
+  isTaskSidebarCollapsed = false,
+  onToggleTaskSidebar
 }) {
   const hoveredTask = tasks.find((task) => task.id === hoveredTaskId) || null;
   const [visibleMonthLabel, setVisibleMonthLabel] = useState(() => formatMonthLabel(baseDate));
@@ -64,6 +66,15 @@ export default function CalendarArea({
     <div className="relative flex h-full flex-col bg-[#06080A]">
       <div className="flex items-center justify-between gap-4 border-b border-[#2A3038] px-6 py-4">
         <div className="flex items-center gap-4">
+          <button
+            type="button"
+            onClick={onToggleTaskSidebar}
+            className="flex h-11 w-11 items-center justify-center rounded-xl border border-[#20242A] bg-[#090C0F] text-[#B4BDCA] shadow-[0_12px_32px_rgba(0,0,0,0.28)] transition-colors hover:border-[#34363D] hover:bg-[#111418] hover:text-[#F7F7F8]"
+            title={isTaskSidebarCollapsed ? "\u30bf\u30b9\u30af\u4e00\u89a7\u3092\u958b\u304f" : "\u30bf\u30b9\u30af\u4e00\u89a7\u3092\u9589\u3058\u308b"}
+          >
+            {isTaskSidebarCollapsed ? <PanelLeftOpen className="h-5 w-5" /> : <PanelLeftClose className="h-5 w-5" />}
+          </button>
+
           <div className="flex items-center gap-2 rounded-xl bg-[#111418] p-1">
             <button
               type="button"

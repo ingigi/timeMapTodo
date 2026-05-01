@@ -7,10 +7,10 @@ import { getAnchoredPopoverPlacement, getSidePopoverPlacement } from "../../util
 const DAY_LABELS = ["\u65e5", "\u6708", "\u706b", "\u6c34", "\u6728", "\u91d1", "\u571f"];
 
 function Field({ label, children, align = "center" }) {
-  const alignClass = align === "start" ? "md:items-start" : "md:items-center";
+  const alignClass = align === "start" ? "items-start" : "items-center";
   return (
-    <div className={`grid gap-3 md:grid-cols-[84px_1fr] ${alignClass}`}>
-      <label className="pt-1 text-sm font-medium text-[#A1A1AA]">{label}</label>
+    <div className={`grid gap-3 rounded-lg px-2 py-2 md:grid-cols-[78px_1fr] ${alignClass}`}>
+      <label className="pt-1 text-[12px] font-bold uppercase tracking-[0.14em] text-[#9AA4B2]">{label}</label>
       {children}
     </div>
   );
@@ -276,7 +276,7 @@ export default function HandDrawnPopup({
     if (!autoFocusTitle || !task?.id || !titleInputRef.current) return;
     if (focusedTitleTaskIdRef.current === task.id) return;
 
-    titleInputRef.current.focus();
+    titleInputRef.current.focus({ preventScroll: true });
     titleInputRef.current.select();
     focusedTitleTaskIdRef.current = task.id;
   }, [autoFocusTitle, task.id]);
@@ -545,7 +545,7 @@ export default function HandDrawnPopup({
                     setIsDeadlinePickerOpen(false);
                   }}
                 >
-                  クリア
+                  {"\u30af\u30ea\u30a2"}
                 </button>
 
                 <button
@@ -562,7 +562,7 @@ export default function HandDrawnPopup({
                     setIsDeadlinePickerOpen(false);
                   }}
                 >
-                  今日
+                  {"\u4eca\u65e5"}
                 </button>
               </div>
             </div>
@@ -573,10 +573,10 @@ export default function HandDrawnPopup({
 
   return (
     <div ref={popupPanelRef} className="flex h-full flex-col overflow-hidden border-l border-[#2A2D35] bg-[#1C1D22] shadow-[0_24px_80px_rgba(0,0,0,0.24)]">
-      <div className="flex items-center justify-between border-b border-[#34363D] px-5 py-4">
+      <div className="flex shrink-0 items-center justify-between border-b border-[#34363D] px-7 py-5">
         <div className="min-w-0">
-          <div className="text-xs font-semibold uppercase tracking-[0.16em] text-[#71717A]">Details</div>
-          <div className="mt-1 text-lg font-semibold text-[#F4F4F5]">Task editor</div>
+          <div className="text-[11px] font-bold uppercase tracking-[0.22em] text-[#8B949E]">Note</div>
+          <div className="mt-1 text-sm font-semibold text-[#C4CAD3]">Task page</div>
         </div>
         <div className="flex items-center gap-1">
           <button
@@ -598,31 +598,22 @@ export default function HandDrawnPopup({
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-5 py-5">
-        <div className="space-y-5">
+      <div className="min-h-0 flex-1 overflow-y-auto px-7 py-7 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <div className="space-y-6">
           <div>
             <input
               ref={titleInputRef}
               name="title"
               value={formData.title}
               onChange={handleChange}
-              className="w-full rounded-lg border border-[#34363D] bg-[#15161A] px-4 py-3 text-2xl font-semibold text-[#F4F4F5] outline-none transition-colors placeholder:text-[#52525B] focus:border-[#0CCB8E] focus:ring-2 focus:ring-[#0CCB8E]/25"
-              placeholder="Task name"
+              className="w-full border-0 bg-transparent px-0 py-1 text-[30px] font-bold leading-tight text-[#F7F7F8] outline-none placeholder:text-[#7B8490]"
+              placeholder={"\u7121\u984c"}
             />
           </div>
 
-          <Field label="Description" align="start">
-            <textarea
-              name="description"
-              value={formData.description}
-              onChange={handleChange}
-              rows={4}
-              className="w-full rounded-lg border border-[#34363D] bg-[#15161A] px-4 py-3 text-sm text-[#D4D4D8] outline-none transition-colors placeholder:text-[#71717A] focus:border-[#0CCB8E] focus:ring-2 focus:ring-[#0CCB8E]/25"
-              placeholder="Add notes"
-            />
-          </Field>
+          <div className="space-y-1 border-y border-[#34363D]/80 py-4">
 
-          <Field label="Deadline">
+          <Field label={"\u671f\u9650"}>
             <div className="relative">
               <button
                 ref={deadlineButtonRef}
@@ -631,23 +622,23 @@ export default function HandDrawnPopup({
                   setDeadlinePickerMonth(startOfMonth(parseDateValue(formData.deadline) || new Date()));
                   setIsDeadlinePickerOpen((prev) => !prev);
                 }}
-                className="flex w-full items-center gap-3 rounded-lg border border-[#34363D] bg-[#15161A] px-4 py-3 text-left shadow-[0_1px_2px_rgba(0,0,0,0.16)] transition-colors hover:border-[#52525B] hover:bg-[#202229] focus:border-[#0CCB8E] focus:outline-none focus:ring-2 focus:ring-[#0CCB8E]/25"
+                className="inline-flex min-h-9 w-fit max-w-full items-center gap-2 rounded-md border border-transparent px-2.5 py-1.5 text-left text-sm font-semibold transition-colors hover:border-[#34363D] hover:bg-[#25272F] focus:border-[#0CCB8E] focus:outline-none focus:ring-2 focus:ring-[#0CCB8E]/20"
               >
                 <div className="min-w-0 flex-1">
-                  <div className={clsx("text-sm font-semibold", formData.deadline ? "text-[#F4F4F5]" : "text-[#A1A1AA]")}>
-                    {formData.deadline ? formattedDeadline : "Select a date"}
+                  <div className={clsx("text-sm font-semibold", formData.deadline ? "text-[#F7F7F8]" : "text-[#B4BDCA]")}>
+                    {formData.deadline ? formattedDeadline : "\u65e5\u4ed8\u306a\u3057"}
                   </div>
-                  <div className="mt-0.5 text-[11px] font-medium text-[#9CA3AF]">{formData.deadline ? "Deadline" : "Set a due date"}</div>
+                  <div className="mt-0.5 text-[11px] font-semibold text-[#AAB4C2]">{formData.deadline ? "\u671f\u9650" : "\u671f\u9650\u3092\u8a2d\u5b9a"}</div>
                 </div>
 
-                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-[#34363D] bg-[#202229] text-[#A1A1AA]">
+                <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-[#A1A1AA]">
                   <CalendarDays className="h-4 w-4" />
                 </div>
               </button>
             </div>
           </Field>
 
-          <Field label="Time">
+          <Field label={"\u6642\u9593"}>
             <div className="flex gap-2">
               <input
                 type="time"
@@ -655,7 +646,7 @@ export default function HandDrawnPopup({
                 step="900"
                 value={formData.scheduledTime}
                 onChange={handleChange}
-                className="min-w-0 flex-1 rounded-lg border border-[#34363D] bg-[#15161A] px-4 py-3 text-sm font-semibold text-[#F4F4F5] outline-none transition-colors focus:border-[#0CCB8E] focus:ring-2 focus:ring-[#0CCB8E]/25"
+                className="h-9 min-w-0 rounded-md border border-transparent bg-transparent px-2.5 text-sm font-semibold text-[#F7F7F8] outline-none transition-colors hover:border-[#34363D] hover:bg-[#25272F] focus:border-[#0CCB8E] focus:ring-2 focus:ring-[#0CCB8E]/20"
               />
               <button
                 type="button"
@@ -666,14 +657,14 @@ export default function HandDrawnPopup({
                     return next;
                   });
                 }}
-                className="rounded-lg border border-[#34363D] px-3 py-2 text-sm font-semibold text-[#A1A1AA] transition-colors hover:bg-[#202229] hover:text-[#F4F4F5]"
+                className="rounded-md px-2.5 py-1.5 text-sm font-semibold text-[#8B949E] transition-colors hover:bg-[#25272F] hover:text-[#F4F4F5]"
               >
-                未配置
+                {"\u89e3\u9664"}
               </button>
             </div>
           </Field>
 
-          <Field label="Tags" align="start">
+          <Field label={"\u30bf\u30b0"} align="start">
             <div className="relative">
               <button
                 ref={tagTriggerRef}
@@ -683,7 +674,7 @@ export default function HandDrawnPopup({
                   setEditingNewTag(false);
                   setNewTagDraft("");
                 }}
-                className="flex w-full items-center justify-between rounded-lg border border-[#34363D] bg-[#15161A] px-3 py-2.5 text-left transition-colors hover:border-[#52525B]"
+                className="flex min-h-9 w-full items-center justify-between rounded-md border border-transparent px-2.5 py-1.5 text-left transition-colors hover:border-[#34363D] hover:bg-[#25272F]"
               >
                 <div className="flex min-w-0 flex-wrap gap-2">
                   {formData.selectedTags.length > 0 ? (
@@ -693,7 +684,7 @@ export default function HandDrawnPopup({
                       </span>
                     ))
                   ) : (
-                    <span className="text-sm text-[#9CA3AF]">Select tags</span>
+                    <span className="text-sm font-semibold text-[#B4BDCA]">{"\u30bf\u30b0\u306a\u3057"}</span>
                   )}
                 </div>
                 <ChevronDown className={clsx("h-4 w-4 shrink-0 text-[#9CA3AF] transition-transform", isTagMenuOpen && "rotate-180")} />
@@ -702,6 +693,15 @@ export default function HandDrawnPopup({
               {tagMenu}
             </div>
           </Field>
+        </div>
+
+        <textarea
+          name="description"
+          value={formData.description}
+          onChange={handleChange}
+          className="mt-7 min-h-[420px] w-full resize-none border-0 bg-transparent px-0 py-1 text-[15px] leading-7 text-[#E4E7EB] outline-none placeholder:text-[#8B949E]"
+          placeholder={"\u30e1\u30e2\u3092\u66f8\u304f..."}
+        />
         </div>
       </div>
 
