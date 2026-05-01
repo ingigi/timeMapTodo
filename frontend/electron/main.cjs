@@ -74,6 +74,8 @@ function createStaticServer(rootDir, preferredPort = 0) {
 }
 
 async function createWindow() {
+  const windowIconPath = path.join(__dirname, "assets/icon.png");
+
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
@@ -81,6 +83,7 @@ async function createWindow() {
     minHeight: 680,
     frame: false,
     backgroundColor: "#06080A",
+    icon: windowIconPath,
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),
       contextIsolation: true,

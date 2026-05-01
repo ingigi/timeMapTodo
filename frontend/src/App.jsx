@@ -1,9 +1,10 @@
 ﻿import { useState, useCallback, useRef, useEffect } from "react";
-import { Bell, LogOut, Minus, Settings, ShieldCheck, Square, User, X } from "lucide-react";
+import { Bell, LogOut, Minus, Moon, ShieldCheck, Square, Sun, User, X } from "lucide-react";
 import MainLayout from "./components/layout/MainLayout";
 import TaskPool from "./components/TaskPool/TaskPool";
 import CalendarArea from "./components/CalendarArea/CalendarArea";
 import HandDrawnPopup from "./components/Common/HandDrawnPopup";
+import LogoMark from "./components/Common/LogoMark";
 import { getTaskStats, getTaskStatus } from "./utils/taskTime";
 import { materializeWorkflowTasks, normalizeWorkflowRecord } from "./utils/workflows";
 import { addMonths, addWeeks, startOfWeek } from "./utils/dateUtils";
@@ -63,6 +64,7 @@ const readPersistedUiSettings = () => {
     const sidebarWidth = Number(parsed.taskSidebarWidth);
     return {
       viewType: parsed.viewType === "month" ? "month" : "week",
+      theme: parsed.theme === "light" ? "light" : "dark",
       taskSidebarCollapsed: parsed.taskSidebarCollapsed === true,
       taskSidebarWidth:
         Number.isFinite(sidebarWidth) && sidebarWidth >= MIN_TASK_SIDEBAR_WIDTH && sidebarWidth <= MAX_TASK_SIDEBAR_WIDTH
@@ -229,9 +231,7 @@ function AuthWindowHeader() {
       style={isDesktopApp ? { WebkitAppRegion: "drag" } : undefined}
     >
       <div className="flex min-w-0 items-center gap-4" style={isDesktopApp ? { WebkitAppRegion: "no-drag" } : undefined}>
-        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-[#0CCB8E] to-[#0A9F74] text-sm font-bold text-[#06100D] shadow-[0_10px_30px_rgba(12,203,142,0.22)]">
-          TM
-        </div>
+        <LogoMark className="h-8 w-8 shrink-0" />
         <h1 className="text-lg font-semibold leading-6 tracking-tight text-[#F7F7F8]">TimeMapTodo</h1>
       </div>
       <DesktopWindowControls />
@@ -306,9 +306,7 @@ function AuthGate({ authState, onGoogleSignIn, onSignIn, onCreateAccount }) {
         className="w-full max-w-[420px] rounded-lg border border-[#2A2D35] bg-[#1C1D22] p-7 shadow-[0_24px_80px_rgba(0,0,0,0.32)]"
       >
         <div className="mb-7">
-          <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-md bg-gradient-to-br from-[#0CCB8E] to-[#0A9F74] text-sm font-semibold text-white shadow-[0_12px_34px_rgba(12,203,142,0.34)]">
-            TM
-          </div>
+          <LogoMark className="mb-4 h-11 w-11" />
           <h1 className="text-2xl font-semibold text-[#F4F4F5]">TimeMapTodo</h1>
           <p className="mt-2 text-sm leading-6 text-[#A1A1AA]">Sign in to keep tasks synced across your devices.</p>
         </div>
@@ -404,7 +402,7 @@ function AuthGate({ authState, onGoogleSignIn, onSignIn, onCreateAccount }) {
   );
 }
 
-function AppHeader({ user, onSignOut }) {
+function AppHeader({ user, onSignOut, theme = "dark", onToggleTheme }) {
   const isDesktopApp = Boolean(window.api?.isDesktopApp);
   const [isAccountMenuOpen, setIsAccountMenuOpen] = useState(false);
   const accountMenuRef = useRef(null);
@@ -438,9 +436,7 @@ function AppHeader({ user, onSignOut }) {
       style={isDesktopApp ? { WebkitAppRegion: "drag" } : undefined}
     >
       <div className="flex min-w-0 items-center gap-4" style={isDesktopApp ? { WebkitAppRegion: "no-drag" } : undefined}>
-        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-[#0CCB8E] to-[#0A9F74] text-sm font-bold text-[#06100D] shadow-[0_10px_30px_rgba(12,203,142,0.22)]">
-          TM
-        </div>
+        <LogoMark className="h-8 w-8 shrink-0" />
         <div className="min-w-0">
           <h1 className="text-lg font-semibold leading-6 tracking-tight text-[#F7F7F8]">TimeMapTodo</h1>
         </div>
@@ -456,10 +452,11 @@ function AppHeader({ user, onSignOut }) {
         </button>
         <button
           type="button"
+          onClick={onToggleTheme}
           className="flex h-9 w-9 items-center justify-center rounded-lg text-[#8B949E] transition-colors hover:bg-[#161A1F] hover:text-[#F7F7F8]"
-          title="Settings"
+          title={theme === "light" ? "Dark mode" : "Light mode"}
         >
-          <Settings className="h-4 w-4" />
+          {theme === "light" ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
         </button>
         {user ? (
           <>
@@ -548,6 +545,7 @@ function App() {
   const [selectedTaskId, setSelectedTaskId] = useState(null);
   const [baseDate, setBaseDate] = useState(new Date());
   const [viewType, setViewType] = useState(persistedUiSettings.viewType || "week");
+  const [theme, setTheme] = useState(persistedUiSettings.theme || "dark");
   const [taskSidebarWidth, setTaskSidebarWidth] = useState(persistedUiSettings.taskSidebarWidth || DEFAULT_TASK_SIDEBAR_WIDTH);
   const [isTaskSidebarCollapsed, setIsTaskSidebarCollapsed] = useState(Boolean(persistedUiSettings.taskSidebarCollapsed));
   const [isTaskSidebarPeeking, setIsTaskSidebarPeeking] = useState(false);
@@ -753,6 +751,10 @@ function App() {
     }, 820);
   }, []);
 
+  const toggleTheme = useCallback(() => {
+    setTheme((current) => (current === "light" ? "dark" : "light"));
+  }, []);
+
   useEffect(() => {
     return () => {
       if (inspectorCloseTimeoutRef.current) {
@@ -851,6 +853,7 @@ function App() {
 
     const uiSettings = {
       viewType,
+      theme,
       taskSidebarWidth,
       taskSidebarCollapsed: isTaskSidebarCollapsed
     };
@@ -860,7 +863,13 @@ function App() {
     } catch (error) {
       console.warn("Failed to save UI settings", error);
     }
-  }, [viewType, taskSidebarWidth, isTaskSidebarCollapsed, isLoaded]);
+  }, [viewType, theme, taskSidebarWidth, isTaskSidebarCollapsed, isLoaded]);
+
+  useEffect(() => {
+    document.documentElement.style.colorScheme = theme;
+    document.documentElement.classList.toggle("theme-light", theme === "light");
+    document.documentElement.classList.toggle("theme-dark", theme !== "light");
+  }, [theme]);
 
   useEffect(() => {
     if (!isLoaded) return;
@@ -995,13 +1004,6 @@ function App() {
       };
     });
   }, [openInspector]);
-
-  const handleUpdateTaskTitle = useCallback((taskId, newTitle) => {
-    setAppState((prev) => ({
-      ...prev,
-      tasks: prev.tasks.map((task) => (task.id === taskId ? { ...task, title: newTitle } : task))
-    }));
-  }, []);
 
   const handleUpdateTaskDetails = useCallback((taskId, updates) => {
     setAppState((prev) => ({
@@ -1285,10 +1287,13 @@ function App() {
 
   return (
     <MainLayout
+      theme={theme}
       header={
         <AppHeader
           user={authState.user}
           onSignOut={handleSignOut}
+          theme={theme}
+          onToggleTheme={toggleTheme}
         />
       }
     >
@@ -1338,7 +1343,6 @@ function App() {
             <TaskPool
               tasks={visiblePoolTasks}
               workflows={appState.workflows}
-              editingTaskId={editingTaskId}
               selectedTaskId={selectedTaskId}
               hoveredTaskId={hoveredTaskId}
               onSelectTask={setSelectedTaskId}
@@ -1347,7 +1351,6 @@ function App() {
               onToggleWorkflowEnabled={handleToggleWorkflowEnabled}
               onDeleteWorkflow={handleDeleteWorkflow}
               onDeleteTask={handleDeleteTask}
-              onUpdateTaskTitle={handleUpdateTaskTitle}
               onOpenDetail={handleOpenTaskDetail}
               onHoverTask={handleHoverTask}
               onUnscheduleTask={handleUnscheduleTask}

@@ -1,5 +1,5 @@
-﻿import clsx from "clsx";
-import { useEffect, useRef, useState } from "react";
+import clsx from "clsx";
+import { useEffect, useRef } from "react";
 import { Trash2 } from "lucide-react";
 import { attachDragPreview } from "../../utils/dragPreview";
 import { getTaskPalette } from "../../utils/taskColors";
@@ -9,27 +9,16 @@ export default function TaskListItem({
   task,
   isActive,
   isRelated,
-  suppressInlineTitleAutoEdit,
   onDelete,
-  onUpdateTaskTitle,
   onOpenDetail,
   onHoverTask
 }) {
   const { id, title, color, status = "NotStarted", deadline } = task;
-  const titleInputRef = useRef(null);
   const dragCleanupRef = useRef(null);
   const dragOffsetRef = useRef(null);
   const suppressClickRef = useRef(false);
-  const [isEditingTitle, setIsEditingTitle] = useState(() => !title?.trim() && !suppressInlineTitleAutoEdit);
   const palette = getTaskPalette(color);
   const isCompleted = status === "Completed";
-
-  useEffect(() => {
-    if (isEditingTitle && titleInputRef.current) {
-      titleInputRef.current.focus();
-      titleInputRef.current.select();
-    }
-  }, [isEditingTitle]);
 
   useEffect(() => {
     return () => {
@@ -60,16 +49,16 @@ export default function TaskListItem({
         isRelated
           ? {
               borderColor: palette.borderStrong,
-              backgroundColor: "#0B0E11",
+              backgroundColor: "var(--surface-raised, #0B0E11)",
               boxShadow: `0 18px 36px ${palette.shadow}`
             }
           : isActive
-            ? { borderColor: palette.border, backgroundColor: "#0B0E11", boxShadow: `0 8px 18px ${palette.shadow}` }
+            ? { borderColor: palette.border, backgroundColor: "var(--surface-raised, #0B0E11)", boxShadow: `0 8px 18px ${palette.shadow}` }
             : isCompleted
               ? { borderColor: palette.completedBorder, backgroundColor: palette.completedSurface }
-              : { backgroundColor: "#0B0E11" }
+              : { backgroundColor: "var(--surface-raised, #0B0E11)" }
       }
-      draggable={!isEditingTitle}
+      draggable
       onPointerDown={(event) => {
         const rect = event.currentTarget.getBoundingClientRect();
         dragOffsetRef.current = {
@@ -78,11 +67,6 @@ export default function TaskListItem({
         };
       }}
       onDragStart={(event) => {
-        if (isEditingTitle) {
-          event.preventDefault();
-          return;
-        }
-
         suppressClickRef.current = true;
         const payload = {
           dragType: "task",
@@ -126,30 +110,12 @@ export default function TaskListItem({
       <div className="h-10 w-1 shrink-0 rounded-full" style={{ backgroundColor: color || "#94a3b8" }} />
 
       <div className="min-w-0 flex-1">
-        {isEditingTitle ? (
-          <input
-            ref={titleInputRef}
-            value={title}
-            onChange={(event) => onUpdateTaskTitle(id, event.target.value)}
-            onClick={(event) => event.stopPropagation()}
-            onMouseDown={(event) => event.stopPropagation()}
-            onBlur={() => setIsEditingTitle(false)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") {
-                event.currentTarget.blur();
-              }
-            }}
-            placeholder="タスク名を入力"
-            className="w-full select-text border-none bg-transparent text-sm font-semibold text-[#F7F7F8] outline-none placeholder:text-[#4B5563]"
-          />
-        ) : (
-          <div
-            className={clsx("truncate text-sm font-semibold text-[#F7F7F8]", isCompleted && "line-through")}
-            style={isCompleted ? { color: palette.mutedText } : undefined}
-          >
-            {title || "無題のタスク"}
-          </div>
-        )}
+        <div
+          className={clsx("truncate text-sm font-semibold text-[#F7F7F8]", isCompleted && "line-through")}
+          style={isCompleted ? { color: palette.mutedText } : undefined}
+        >
+          {title || "無題のタスク"}
+        </div>
       </div>
 
       <button
@@ -165,7 +131,3 @@ export default function TaskListItem({
     </div>
   );
 }
-
-
-
-

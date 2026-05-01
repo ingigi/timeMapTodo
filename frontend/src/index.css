@@ -18,6 +18,11 @@ body {
   color: #F7F7F8;
 }
 
+html.theme-light body {
+  background-color: #f6f7fb;
+  color: #111827;
+}
+
 * {
   box-sizing: border-box;
 }
@@ -33,6 +38,128 @@ body {
 
 ::selection {
   background: rgba(12, 203, 142, 0.35);
+}
+
+.theme-light {
+  --surface-base: #f6f7fb;
+  --surface-panel: #ffffff;
+  --surface-soft: #f0f3f7;
+  --surface-raised: #ffffff;
+  --surface-hover: #e9edf3;
+  --border-subtle: #d9dee7;
+  --border-strong: #c7ceda;
+  --text-primary: #111827;
+  --text-secondary: #475569;
+  --text-muted: #64748b;
+  --text-faint: #94a3b8;
+  --shadow-soft: 0 18px 44px rgba(15, 23, 42, 0.11);
+}
+
+.theme-light [class~="bg-[#06080A]"],
+.theme-light [class~="bg-[#090C0F]"],
+.theme-light [class~="bg-[#0B0E11]"] {
+  background-color: var(--surface-base) !important;
+}
+
+.theme-light [class~="bg-[#0B0E11]/95"] {
+  background-color: rgba(255, 255, 255, 0.92) !important;
+}
+
+.theme-light [class~="bg-[#111418]"],
+.theme-light [class~="bg-[#15161A]"],
+.theme-light [class~="bg-[#15171C]"],
+.theme-light [class~="bg-[#161A1F]"],
+.theme-light [class~="bg-[#171B20]"],
+.theme-light [class~="bg-[#1C1D22]"] {
+  background-color: var(--surface-panel) !important;
+}
+
+.theme-light [class~="bg-[#202229]"],
+.theme-light [class~="bg-[#25272F]"] {
+  background-color: var(--surface-soft) !important;
+}
+
+.theme-light [class~="bg-[#20242A]"],
+.theme-light [class~="bg-[#2A3038]"] {
+  background-color: var(--border-subtle) !important;
+}
+
+.theme-light [class~="text-[#F7F7F8]"],
+.theme-light [class~="text-[#F4F4F5]"],
+.theme-light [class~="text-[#EEF2F6]"],
+.theme-light [class~="text-[#E5E7EB]"],
+.theme-light [class~="text-[#E4E7EB]"],
+.theme-light [class~="text-[#E2E8F0]"],
+.theme-light [class~="text-[#D4D4D8]"],
+.theme-light [class~="text-[#CBD5E1]"],
+.theme-light [class~="text-[#C4CAD3]"],
+.theme-light [class~="text-[#B8C0CC]"],
+.theme-light [class~="text-[#B4BDCA]"],
+.theme-light [class~="text-[#A8B2C0]"],
+.theme-light [class~="text-[#AAB4C2]"],
+.theme-light [class~="text-[#A1A1AA]"],
+.theme-light [class~="text-[#9CA3AF]"],
+.theme-light [class~="text-[#94A3B8]"],
+.theme-light [class~="text-[#8B949E]"],
+.theme-light [class~="text-[#748092]"],
+.theme-light [class~="text-[#71717A]"],
+.theme-light [class~="text-[#6F7A88]"],
+.theme-light [class~="text-[#687384]"] {
+  color: var(--text-secondary) !important;
+}
+
+.theme-light [class~="text-[#F7F7F8]"],
+.theme-light [class~="text-[#F4F4F5]"],
+.theme-light [class~="text-[#EEF2F6]"],
+.theme-light [class~="text-[#E5E7EB]"],
+.theme-light [class~="text-[#E4E7EB]"] {
+  color: var(--text-primary) !important;
+}
+
+.theme-light [class~="border-[#20242A]"],
+.theme-light [class~="border-[#252A32]"],
+.theme-light [class~="border-[#2A2D35]"],
+.theme-light [class~="border-[#2A3038]"],
+.theme-light [class~="border-[#2A3038]"],
+.theme-light [class~="border-[#2A2F37]"],
+.theme-light [class~="border-[#34363D]"],
+.theme-light [class~="border-[#34363D]/80"],
+.theme-light [class~="border-[#334155]"] {
+  border-color: var(--border-subtle) !important;
+}
+
+.theme-light [class~="placeholder:text-[#7B8490]"]::placeholder,
+.theme-light [class~="placeholder:text-[#8B949E]"]::placeholder,
+.theme-light [class~="placeholder:text-[#9AA4B2]"]::placeholder {
+  color: var(--text-faint) !important;
+}
+
+.theme-light [class~="shadow-[0_24px_80px_rgba(0,0,0,0.24)]"],
+.theme-light [class~="shadow-[0_24px_60px_rgba(0,0,0,0.48)]"],
+.theme-light [class~="shadow-[0_22px_70px_rgba(0,0,0,0.42)]"],
+.theme-light [class~="shadow-[0_28px_90px_rgba(0,0,0,0.52)]"],
+.theme-light [class~="shadow-[0_12px_32px_rgba(0,0,0,0.28)]"] {
+  box-shadow: var(--shadow-soft) !important;
+}
+
+.theme-light [class~="hover:bg-[#0C1116]"]:hover,
+.theme-light [class~="hover:bg-[#111418]"]:hover,
+.theme-light [class~="hover:bg-[#161A1F]"]:hover,
+.theme-light [class~="hover:bg-[#171B20]"]:hover,
+.theme-light [class~="hover:bg-[#1A1F27]"]:hover,
+.theme-light [class~="hover:bg-[#202229]"]:hover,
+.theme-light [class~="hover:bg-[#25272F]"]:hover,
+.theme-light [class~="hover:bg-[#34363D]"]:hover {
+  background-color: var(--surface-hover) !important;
+}
+
+.theme-light [class~="hover:text-[#F7F7F8]"]:hover,
+.theme-light [class~="hover:text-[#F4F4F5]"]:hover {
+  color: var(--text-primary) !important;
+}
+
+.theme-light .task-date-input {
+  color-scheme: light;
 }
 
 

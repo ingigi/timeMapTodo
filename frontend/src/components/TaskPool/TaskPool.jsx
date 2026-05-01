@@ -146,13 +146,11 @@ export default function TaskPool({
   workflows = [],
   selectedTaskId,
   hoveredTaskId,
-  editingTaskId,
   onCreateInlineTask,
   onCreateWorkflow,
   onToggleWorkflowEnabled,
   onDeleteWorkflow,
   onDeleteTask,
-  onUpdateTaskTitle,
   onOpenDetail,
   onHoverTask,
   onUnscheduleTask,
@@ -219,9 +217,7 @@ export default function TaskPool({
                 task={task}
                 isActive={selectedTaskId === task.id}
                 isRelated={hoveredTaskId === task.id}
-                suppressInlineTitleAutoEdit={editingTaskId === task.id}
                 onDelete={onDeleteTask}
-                onUpdateTaskTitle={onUpdateTaskTitle}
                 onOpenDetail={onOpenDetail}
                 onHoverTask={onHoverTask}
               />
