@@ -15,6 +15,7 @@ function MonthlyTaskCard({
   onOpenDetail
 }) {
   const dragCleanupRef = useRef(null);
+  const dragOffsetRef = useRef(null);
   const suppressClickRef = useRef(false);
   const [isDragging, setIsDragging] = useState(false);
   const palette = getTaskPalette(task.color);
@@ -24,6 +25,13 @@ function MonthlyTaskCard({
       draggable
       onMouseEnter={() => onHoverTask(task.id, { deadlineDateKey: task.deadline || null, deadlineLabel: task.deadline || null })}
       onMouseLeave={() => onHoverTask(null)}
+      onPointerDown={(event) => {
+        const rect = event.currentTarget.getBoundingClientRect();
+        dragOffsetRef.current = {
+          x: event.clientX - rect.left,
+          y: event.clientY - rect.top
+        };
+      }}
       onClick={(event) => {
         if (suppressClickRef.current) {
           event.preventDefault();
@@ -43,7 +51,8 @@ function MonthlyTaskCard({
           sourceTime: task.scheduledTime || null,
           completed: Boolean(task.completed),
           dragTitle: task.title || "Task",
-          dragColor: task.color || "#94a3b8"
+          dragColor: task.color || "#94a3b8",
+          dragOffsetY: dragOffsetRef.current?.y || 0
         };
         event.dataTransfer.effectAllowed = "move";
         event.dataTransfer.setData("taskId", task.id);
@@ -56,10 +65,13 @@ function MonthlyTaskCard({
         event.dataTransfer.setData("sourceTime", task.scheduledTime || "");
         event.dataTransfer.setData("dragTitle", task.title || "Task");
         event.dataTransfer.setData("dragColor", task.color || "#94a3b8");
+        event.dataTransfer.setData("dragOffsetY", String(dragOffsetRef.current?.y || 0));
         setCurrentDrag(payload);
         dragCleanupRef.current = attachDragPreview(event, {
           hideNativePreview: true,
           sourceElement: event.currentTarget,
+          offsetX: dragOffsetRef.current?.x,
+          offsetY: dragOffsetRef.current?.y,
           title: task.title || "Task",
           color: task.color || "#94a3b8",
           completed: task.completed
@@ -68,6 +80,7 @@ function MonthlyTaskCard({
       onDragEnd={() => {
         setIsDragging(false);
         clearCurrentDrag();
+        dragOffsetRef.current = null;
         dragCleanupRef.current?.();
         dragCleanupRef.current = null;
         window.setTimeout(() => {

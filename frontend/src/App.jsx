@@ -14,6 +14,7 @@ import {
   isFirebaseConfigured,
   loadLegacyFirebaseAppState,
   onFirebaseAuthChange,
+  restoreGoogleCalendarAccessToken,
   saveFirebaseAppState,
   signInWithEmail,
   signInWithGoogle,
@@ -28,6 +29,7 @@ const GOOGLE_CALENDAR_REFRESH_INTERVAL_MS = 60 * 1000;
 const DEFAULT_TASK_SIDEBAR_WIDTH = 320;
 const MIN_TASK_SIDEBAR_WIDTH = 260;
 const MAX_TASK_SIDEBAR_WIDTH = 560;
+const GOOGLE_SIGN_IN_TIMEOUT_MS = 90 * 1000;
 
 const EMPTY_APP_STATE = {
   tasks: [],
@@ -182,6 +184,59 @@ const isLegacyOwnerUser = (user) => {
   return Boolean(legacyOwnerEmail && user?.email?.toLowerCase() === legacyOwnerEmail);
 };
 
+function DesktopWindowControls() {
+  const isDesktopApp = Boolean(window.api?.isDesktopApp);
+  if (!isDesktopApp) return null;
+
+  return (
+    <div className="ml-2 flex h-14 items-center border-l border-[#20242A]" style={{ WebkitAppRegion: "no-drag" }}>
+      <button
+        type="button"
+        onClick={() => window.api?.minimizeWindow?.()}
+        className="flex h-14 w-12 items-center justify-center text-[#8B949E] transition-colors hover:bg-[#161A1F] hover:text-[#F7F7F8]"
+        title="Minimize"
+      >
+        <Minus className="h-4 w-4" />
+      </button>
+      <button
+        type="button"
+        onClick={() => window.api?.toggleMaximizeWindow?.()}
+        className="flex h-14 w-12 items-center justify-center text-[#8B949E] transition-colors hover:bg-[#161A1F] hover:text-[#F7F7F8]"
+        title="Maximize"
+      >
+        <Square className="h-3.5 w-3.5" />
+      </button>
+      <button
+        type="button"
+        onClick={() => window.api?.closeWindow?.()}
+        className="flex h-14 w-12 items-center justify-center text-[#8B949E] transition-colors hover:bg-red-500/80 hover:text-white"
+        title="Close"
+      >
+        <X className="h-4 w-4" />
+      </button>
+    </div>
+  );
+}
+
+function AuthWindowHeader() {
+  const isDesktopApp = Boolean(window.api?.isDesktopApp);
+
+  return (
+    <header
+      className="absolute inset-x-0 top-0 z-20 flex h-14 items-center justify-between border-b border-[#20242A] bg-[#0B0E11]/95 pl-4 backdrop-blur"
+      style={isDesktopApp ? { WebkitAppRegion: "drag" } : undefined}
+    >
+      <div className="flex min-w-0 items-center gap-4" style={isDesktopApp ? { WebkitAppRegion: "no-drag" } : undefined}>
+        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-[#0CCB8E] to-[#0A9F74] text-sm font-bold text-[#06100D] shadow-[0_10px_30px_rgba(12,203,142,0.22)]">
+          TM
+        </div>
+        <h1 className="text-lg font-semibold leading-6 tracking-tight text-[#F7F7F8]">TimeMapTodo</h1>
+      </div>
+      <DesktopWindowControls />
+    </header>
+  );
+}
+
 function AuthGate({ authState, onGoogleSignIn, onSignIn, onCreateAccount }) {
   const [mode, setMode] = useState("signin");
   const [email, setEmail] = useState("");
@@ -189,17 +244,37 @@ function AuthGate({ authState, onGoogleSignIn, onSignIn, onCreateAccount }) {
   const [errorMessage, setErrorMessage] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isGoogleSubmitting, setIsGoogleSubmitting] = useState(false);
+  const googleSignInAttemptRef = useRef(0);
+
+  useEffect(() => {
+    if (!isGoogleSubmitting) return undefined;
+
+    const attemptId = googleSignInAttemptRef.current;
+    const timeoutId = window.setTimeout(() => {
+      if (googleSignInAttemptRef.current !== attemptId) return;
+      setIsGoogleSubmitting(false);
+      setErrorMessage("Google sign-in timed out. Please try again.");
+    }, GOOGLE_SIGN_IN_TIMEOUT_MS);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [isGoogleSubmitting]);
 
   const handleGoogleSignIn = async () => {
     setErrorMessage("");
     setIsGoogleSubmitting(true);
+    googleSignInAttemptRef.current += 1;
+    const attemptId = googleSignInAttemptRef.current;
 
     try {
       await onGoogleSignIn();
     } catch (error) {
-      setErrorMessage(error.message || "Google sign-in failed.");
+      if (googleSignInAttemptRef.current === attemptId) {
+        setErrorMessage(error.message || "Google sign-in failed.");
+      }
     } finally {
-      setIsGoogleSubmitting(false);
+      if (googleSignInAttemptRef.current === attemptId) {
+        setIsGoogleSubmitting(false);
+      }
     }
   };
 
@@ -222,7 +297,8 @@ function AuthGate({ authState, onGoogleSignIn, onSignIn, onCreateAccount }) {
   };
 
   return (
-    <div className="flex h-screen items-center justify-center bg-[#15161A] px-6">
+    <div className="relative flex h-screen items-center justify-center bg-[#15161A] px-6 pt-14">
+      <AuthWindowHeader />
       <form
         onSubmit={handleSubmit}
         className="w-full max-w-[420px] rounded-lg border border-[#2A2D35] bg-[#1C1D22] p-7 shadow-[0_24px_80px_rgba(0,0,0,0.32)]"
@@ -246,6 +322,20 @@ function AuthGate({ authState, onGoogleSignIn, onSignIn, onCreateAccount }) {
           </span>
           {isGoogleSubmitting ? "Opening Google..." : "Continue with Google"}
         </button>
+
+        {isGoogleSubmitting ? (
+          <button
+            type="button"
+            onClick={() => {
+              googleSignInAttemptRef.current += 1;
+              setIsGoogleSubmitting(false);
+              setErrorMessage("Google sign-in was cancelled. Please try again.");
+            }}
+            className="-mt-2 mb-4 w-full rounded-md border border-[#34363D] px-4 py-2 text-sm font-medium text-[#A8B2C0] transition hover:bg-[#25272F] hover:text-[#F7F7F8]"
+          >
+            Cancel and try again
+          </button>
+        ) : null}
 
         <div className="mb-4 flex items-center gap-3 text-xs font-medium text-[#71717A]">
           <div className="h-px flex-1 bg-[#2A2D35]" />
@@ -718,6 +808,28 @@ function App() {
       document.removeEventListener("visibilitychange", refreshGoogleCalendar);
     };
   }, [authState.status, isLoaded, googleCalendarAuthVersion]);
+
+  useEffect(() => {
+    if (!isLoaded || authState.status !== "signed-in" || getGoogleCalendarAccessToken()) return;
+
+    let cancelled = false;
+
+    restoreGoogleCalendarAccessToken(authState.user)
+      .then((accessToken) => {
+        if (cancelled || !accessToken) return;
+        setGoogleCalendarStatus("idle");
+        setGoogleCalendarError("");
+        setGoogleCalendarAuthVersion((current) => current + 1);
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        console.warn("Failed to restore Google Calendar access", error);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [authState.status, authState.user, isLoaded]);
 
   useEffect(() => {
     if (!isLoaded || authState.status !== "signed-in") {

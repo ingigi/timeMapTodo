@@ -31,6 +31,7 @@ export default function TaskCard({
   const { id, title, color, status = "NotStarted", deadline } = task;
   const titleInputRef = useRef(null);
   const dragCleanupRef = useRef(null);
+  const dragOffsetRef = useRef(null);
   const suppressClickRef = useRef(false);
   const [isEditingTitle, setIsEditingTitle] = useState(() => !title?.trim() && !suppressInlineTitleAutoEdit);
   const [isDragging, setIsDragging] = useState(false);
@@ -75,6 +76,13 @@ export default function TaskCard({
             : undefined
       }
       draggable={!isEditingTitle}
+      onPointerDown={(event) => {
+        const rect = event.currentTarget.getBoundingClientRect();
+        dragOffsetRef.current = {
+          x: event.clientX - rect.left,
+          y: event.clientY - rect.top
+        };
+      }}
       onDragStart={(event) => {
         if (isEditingTitle) {
           event.preventDefault();
@@ -89,7 +97,8 @@ export default function TaskCard({
           dragTitle: title || "タスク",
           dragColor: color || "#94a3b8",
           completed: isCompleted,
-          dragDeadline: deadline || ""
+          dragDeadline: deadline || "",
+          dragOffsetY: dragOffsetRef.current?.y || 0
         };
         event.dataTransfer.effectAllowed = "copy";
         event.dataTransfer.setData("taskId", id);
@@ -99,10 +108,13 @@ export default function TaskCard({
         event.dataTransfer.setData("application/x-drag-type", "new");
         event.dataTransfer.setData("dragTitle", title || "タスク");
         event.dataTransfer.setData("dragColor", color || "#94a3b8");
+        event.dataTransfer.setData("dragOffsetY", String(dragOffsetRef.current?.y || 0));
         setCurrentDrag(payload);
         dragCleanupRef.current = attachDragPreview(event, {
           hideNativePreview: true,
           sourceElement: event.currentTarget,
+          offsetX: dragOffsetRef.current?.x,
+          offsetY: dragOffsetRef.current?.y,
           title: title || "タスク",
           color: color || "#94a3b8",
           completed: isCompleted
@@ -111,6 +123,7 @@ export default function TaskCard({
       onDragEnd={() => {
         setIsDragging(false);
         clearCurrentDrag();
+        dragOffsetRef.current = null;
         dragCleanupRef.current?.();
         dragCleanupRef.current = null;
         window.setTimeout(() => {

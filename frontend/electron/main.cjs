@@ -1,13 +1,16 @@
-const { app, BrowserWindow, Menu, ipcMain, powerMonitor, shell } = require("electron");
+const { app, BrowserWindow, Menu, ipcMain, powerMonitor, safeStorage, shell } = require("electron");
 const path = require("path");
 const fs = require("fs");
 const http = require("http");
 const crypto = require("crypto");
 
 const isDev = process.env.NODE_ENV === "development";
+const STATIC_SERVER_PORT = 41730;
+const GOOGLE_OAUTH_TIMEOUT_MS = 90 * 1000;
 
 let mainWindow;
 let staticServer;
+const googleCalendarTokensFileName = "googleCalendarTokens.json";
 
 function notifyRendererAppResumed() {
   if (!mainWindow || mainWindow.isDestroyed()) return;
@@ -31,7 +34,7 @@ const getContentType = (filePath) => {
   return "application/octet-stream";
 };
 
-function createStaticServer(rootDir) {
+function createStaticServer(rootDir, preferredPort = 0) {
   const server = http.createServer((request, response) => {
     const requestUrl = new URL(request.url, "http://127.0.0.1");
     const requestedPath = decodeURIComponent(requestUrl.pathname);
@@ -63,7 +66,7 @@ function createStaticServer(rootDir) {
 
   return new Promise((resolve, reject) => {
     server.once("error", reject);
-    server.listen(0, "127.0.0.1", () => {
+    server.listen(preferredPort, "127.0.0.1", () => {
       server.off("error", reject);
       resolve(server);
     });
@@ -94,7 +97,7 @@ async function createWindow() {
       }
     }, 1000);
   } else {
-    staticServer = await createStaticServer(path.join(__dirname, "../dist"));
+    staticServer = await createStaticServer(path.join(__dirname, "../dist"), STATIC_SERVER_PORT);
     const address = staticServer.address();
     mainWindow.loadURL(`http://127.0.0.1:${address.port}/`);
   }
@@ -160,6 +163,18 @@ app.on("before-quit", function () {
 function createOAuthCallbackServer(expectedState) {
   let server;
   let rejectCallback;
+  let timeoutId;
+
+  const closeServer = () => {
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+      timeoutId = null;
+    }
+
+    if (server?.listening) {
+      server.close();
+    }
+  };
 
   const codePromise = new Promise((resolve, reject) => {
     rejectCallback = reject;
@@ -180,7 +195,7 @@ function createOAuthCallbackServer(expectedState) {
         response.writeHead(400, { "Content-Type": "text/html; charset=utf-8" });
         response.end("<h1>Sign-in failed</h1><p>Invalid state. You can close this tab.</p>");
         reject(new Error("Invalid OAuth state."));
-        server.close();
+        closeServer();
         return;
       }
 
@@ -188,15 +203,20 @@ function createOAuthCallbackServer(expectedState) {
         response.writeHead(400, { "Content-Type": "text/html; charset=utf-8" });
         response.end("<h1>Sign-in failed</h1><p>You can close this tab and return to TimeMapTodo.</p>");
         reject(new Error(error || "Missing OAuth authorization code."));
-        server.close();
+        closeServer();
         return;
       }
 
       response.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
       response.end("<h1>Sign-in complete</h1><p>You can close this tab and return to TimeMapTodo.</p>");
       resolve({ code });
-      server.close();
+      closeServer();
     });
+
+    timeoutId = setTimeout(() => {
+      reject(new Error("Google sign-in timed out. Please try again."));
+      closeServer();
+    }, GOOGLE_OAUTH_TIMEOUT_MS);
   });
 
   const readyPromise = new Promise((resolve, reject) => {
@@ -214,7 +234,7 @@ function createOAuthCallbackServer(expectedState) {
   return {
     ready: readyPromise,
     code: codePromise,
-    close: () => server.close()
+    close: closeServer
   };
 }
 
@@ -247,8 +267,82 @@ async function exchangeOAuthCode({ clientId, clientSecret, code, codeVerifier, r
 
   return {
     accessToken: body.access_token,
-    idToken: body.id_token
+    idToken: body.id_token,
+    refreshToken: body.refresh_token || null,
+    expiresIn: body.expires_in || null
   };
+}
+
+async function refreshOAuthAccessToken({ clientId, clientSecret, refreshToken }) {
+  const tokenParams = new URLSearchParams({
+    client_id: clientId,
+    refresh_token: refreshToken,
+    grant_type: "refresh_token"
+  });
+
+  if (clientSecret) {
+    tokenParams.set("client_secret", clientSecret);
+  }
+
+  const response = await fetch("https://oauth2.googleapis.com/token", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded"
+    },
+    body: tokenParams
+  });
+
+  const body = await response.json();
+
+  if (!response.ok) {
+    throw new Error(body.error_description || body.error || "Failed to refresh Google Calendar token.");
+  }
+
+  return {
+    accessToken: body.access_token,
+    expiresIn: body.expires_in || null
+  };
+}
+
+const getGoogleCalendarTokensPath = () => path.join(app.getPath("userData"), googleCalendarTokensFileName);
+
+const encodeSecret = (value) => {
+  if (!value) return null;
+  if (safeStorage.isEncryptionAvailable()) {
+    return {
+      encrypted: true,
+      value: safeStorage.encryptString(value).toString("base64")
+    };
+  }
+
+  return {
+    encrypted: false,
+    value
+  };
+};
+
+const decodeSecret = (record) => {
+  if (!record?.value) return null;
+  if (record.encrypted) {
+    return safeStorage.decryptString(Buffer.from(record.value, "base64"));
+  }
+
+  return record.value;
+};
+
+async function readGoogleCalendarTokens() {
+  try {
+    const filePath = getGoogleCalendarTokensPath();
+    if (!fs.existsSync(filePath)) return {};
+    return JSON.parse(await fs.promises.readFile(filePath, "utf8"));
+  } catch (error) {
+    console.error("Failed to read Google Calendar tokens", error);
+    return {};
+  }
+}
+
+async function writeGoogleCalendarTokens(tokens) {
+  await fs.promises.writeFile(getGoogleCalendarTokensPath(), JSON.stringify(tokens), "utf8");
 }
 
 ipcMain.handle("google-oauth-sign-in", async (event, { clientId, clientSecret }) => {
@@ -271,6 +365,7 @@ ipcMain.handle("google-oauth-sign-in", async (event, { clientId, clientSecret })
   authUrl.searchParams.set("code_challenge", codeChallenge);
   authUrl.searchParams.set("code_challenge_method", "S256");
   authUrl.searchParams.set("state", state);
+  authUrl.searchParams.set("access_type", "offline");
   authUrl.searchParams.set("prompt", "consent select_account");
   authUrl.searchParams.set("include_granted_scopes", "true");
 
@@ -283,6 +378,61 @@ ipcMain.handle("google-oauth-sign-in", async (event, { clientId, clientSecret })
     callbackServer.close();
     throw error;
   }
+});
+
+ipcMain.handle("google-calendar-save-token", async (event, { uid, refreshToken, accessToken, expiresAt }) => {
+  if (!uid) {
+    throw new Error("Missing Firebase user ID for Google Calendar token.");
+  }
+
+  const tokens = await readGoogleCalendarTokens();
+  const existing = tokens[uid] || {};
+  tokens[uid] = {
+    ...existing,
+    refreshToken: refreshToken ? encodeSecret(refreshToken) : existing.refreshToken || null,
+    accessToken: accessToken ? encodeSecret(accessToken) : existing.accessToken || null,
+    expiresAt: expiresAt || existing.expiresAt || 0,
+    updatedAt: new Date().toISOString()
+  };
+  await writeGoogleCalendarTokens(tokens);
+  return { success: true };
+});
+
+ipcMain.handle("google-calendar-refresh-token", async (event, { uid, clientId, clientSecret }) => {
+  if (!uid) {
+    throw new Error("Missing Firebase user ID for Google Calendar token.");
+  }
+
+  const tokens = await readGoogleCalendarTokens();
+  const tokenRecord = tokens[uid];
+  if (!tokenRecord) return { accessToken: null };
+
+  const now = Date.now();
+  const storedAccessToken = decodeSecret(tokenRecord.accessToken);
+  if (storedAccessToken && tokenRecord.expiresAt && tokenRecord.expiresAt - now > 60 * 1000) {
+    return {
+      accessToken: storedAccessToken,
+      expiresAt: tokenRecord.expiresAt
+    };
+  }
+
+  const refreshToken = decodeSecret(tokenRecord.refreshToken);
+  if (!refreshToken) return { accessToken: null };
+
+  const refreshed = await refreshOAuthAccessToken({ clientId, clientSecret, refreshToken });
+  const expiresAt = refreshed.expiresIn ? Date.now() + refreshed.expiresIn * 1000 : 0;
+  tokens[uid] = {
+    ...tokenRecord,
+    accessToken: encodeSecret(refreshed.accessToken),
+    expiresAt,
+    updatedAt: new Date().toISOString()
+  };
+  await writeGoogleCalendarTokens(tokens);
+
+  return {
+    accessToken: refreshed.accessToken,
+    expiresAt
+  };
 });
 
 const dataFilePath = path.join(app.getPath("userData"), "timeMapTodoData.json");

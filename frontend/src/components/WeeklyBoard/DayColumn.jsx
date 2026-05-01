@@ -117,35 +117,40 @@ function PlacementPreview({ preview }) {
   const palette = getTaskPalette(preview.color);
   const startTime = minutesToTime(preview.startMinutes);
   const endTime = minutesToTime(preview.startMinutes + preview.durationMinutes);
-  const top = (preview.startMinutes / 60) * HOUR_HEIGHT;
   const height = Math.max(38, (preview.durationMinutes / 60) * HOUR_HEIGHT - 4);
 
   return (
     <div
-      className="pointer-events-none absolute left-1.5 right-1.5 z-30 rounded-lg border px-2 py-1.5 shadow-[0_18px_38px_rgba(0,0,0,0.28)] transition-[top,height] duration-100 ease-out"
+      className="absolute left-1.5 right-1.5 z-[18] rounded-lg border px-2 py-1 transition-[transform,height] duration-100 ease-out"
       style={{
-        top: `${top + 2}px`,
+        top: 0,
+        transform: `translate3d(0, ${(preview.startMinutes / 60) * HOUR_HEIGHT + 2}px, 0)`,
         height: `${height}px`,
-        borderColor: palette.borderStrong,
-        backgroundColor: palette.surfaceStrong,
-        color: palette.text
+        borderColor: preview.completed ? palette.completedBorder : palette.border,
+        backgroundColor: preview.completed ? palette.completedSurface : palette.surface,
+        boxShadow: `0 18px 38px ${palette.shadow}`
       }}
     >
-      <div className="flex min-h-0 items-start gap-2">
-        <div className="flex w-11 shrink-0 flex-col items-start gap-0.5">
-          <span
-            className="flex h-3.5 w-3.5 items-center justify-center rounded-full border"
-            style={{
-              borderColor: preview.completed ? palette.borderStrong : palette.border,
-              backgroundColor: preview.completed ? palette.borderStrong : "transparent",
-              color: "#ffffff"
-            }}
-          >
-            {preview.completed ? <Check className="h-2 w-2" /> : null}
-          </span>
-          <span className="max-w-full truncate text-[9px] font-semibold leading-3 text-[#A8B2C0]">{startTime}-{endTime}</span>
-        </div>
-        <div className="min-w-0 flex-1 truncate text-[11px] font-bold leading-4">{preview.title || "Untitled"}</div>
+      <div className="grid min-h-0 grid-cols-[16px_minmax(0,1fr)] items-start gap-x-1.5 gap-y-0.5">
+        <span
+          className="flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full border"
+          style={{
+            borderColor: preview.completed ? palette.borderStrong : palette.border,
+            backgroundColor: preview.completed ? palette.borderStrong : "transparent",
+            color: "#ffffff"
+          }}
+        >
+          {preview.completed ? <Check className="h-2 w-2" /> : null}
+        </span>
+        <span
+          className="min-w-0 break-words text-[12px] font-bold leading-4"
+          style={{ color: preview.completed ? palette.mutedText : palette.text }}
+        >
+          {preview.title || "Untitled"}
+        </span>
+        <span className="col-span-2 max-w-full break-words text-[10.5px] font-bold leading-3 text-[#B8C0CC]">
+          {startTime}-{endTime}
+        </span>
       </div>
     </div>
   );
@@ -185,7 +190,7 @@ export default function DayColumn({
 }) {
   const [dropTarget, setDropTarget] = useState(null);
   const [dragColor, setDragColor] = useState(null);
-  const [placementPreview, setPlacementPreview] = useState(null);
+  const [placementGuide, setPlacementGuide] = useState(null);
   const dropPalette = getTaskPalette(dragColor);
   const untimedTasks = dayTasks.filter((task) => !task.scheduledTime);
   const timedTasks = dayTasks.filter((task) => task.scheduledTime);
@@ -236,7 +241,9 @@ export default function DayColumn({
   const getTimedDropPosition = (event, payload) => {
     const rect = event.currentTarget.getBoundingClientRect();
     const durationMinutes = Math.max(MIN_DURATION_MINUTES, Number(payload.durationMinutes) || 30);
-    const rawMinutes = ((event.clientY - rect.top) / HOUR_HEIGHT) * 60;
+    const previewHeight = Math.max(38, (durationMinutes / 60) * HOUR_HEIGHT - 4);
+    const dragOffsetY = Math.max(0, Math.min(previewHeight, Number(payload.dragOffsetY) || Number(event.dataTransfer.getData("dragOffsetY")) || 0));
+    const rawMinutes = ((event.clientY - rect.top - dragOffsetY) / HOUR_HEIGHT) * 60;
     const snappedMinutes = Math.floor(rawMinutes / SNAP_MINUTES) * SNAP_MINUTES;
     const maxStartMinutes = Math.max(0, 24 * 60 - durationMinutes);
     const startMinutes = Math.max(0, Math.min(maxStartMinutes, snappedMinutes));
@@ -269,7 +276,7 @@ export default function DayColumn({
     const color = event.dataTransfer.getData("dragColor") || payload.dragColor || "#94a3b8";
     setDropTarget(nextPosition.targetTime);
     setDragColor(color);
-    setPlacementPreview({
+    setPlacementGuide({
       ...nextPosition,
       title: event.dataTransfer.getData("dragTitle") || payload.dragTitle || "Untitled",
       color,
@@ -281,7 +288,7 @@ export default function DayColumn({
     if (event.currentTarget.contains(event.relatedTarget)) return;
     setDropTarget(null);
     setDragColor(null);
-    setPlacementPreview(null);
+    setPlacementGuide(null);
   };
 
   const handleDrop = (event, targetTime = null) => {
@@ -291,7 +298,7 @@ export default function DayColumn({
     event.preventDefault();
     setDropTarget(null);
     setDragColor(null);
-    setPlacementPreview(null);
+    setPlacementGuide(null);
 
     const nextDuration = payload.durationMinutes || undefined;
     if (payload.sourceDateKey) {
@@ -310,7 +317,7 @@ export default function DayColumn({
     const nextPosition = getTimedDropPosition(event, payload);
     setDropTarget(null);
     setDragColor(null);
-    setPlacementPreview(null);
+    setPlacementGuide(null);
 
     if (payload.sourceDateKey) {
       onMoveTask(payload.taskId, dateKey, nextPosition.targetTime, nextPosition.durationMinutes);
@@ -382,18 +389,8 @@ export default function DayColumn({
         <div key={hour} style={{ height: `${HOUR_HEIGHT}px` }} />
       ))}
 
-      {placementPreview ? (
-        <div
-          className="pointer-events-none absolute inset-0"
-          style={{
-            backgroundColor: dropPalette.surfaceStrong,
-            boxShadow: `inset 0 0 0 2px ${dropPalette.borderStrong}`
-          }}
-        />
-      ) : null}
-
       <div className="pointer-events-none absolute inset-0">
-        {placementPreview ? <PlacementPreview preview={placementPreview} /> : null}
+        {placementGuide ? <PlacementPreview preview={placementGuide} /> : null}
 
         {timedLayoutItems.map((item) => {
           const top = (item.startMinutes / 60) * HOUR_HEIGHT;
@@ -401,11 +398,13 @@ export default function DayColumn({
           const leftPercent = (item.renderLaneIndex / item.renderLaneCount) * 100;
           const widthPercent = (item.renderLaneSpan / item.renderLaneCount) * 100;
           const overlapsNextLane = item.renderLaneIndex + item.renderLaneSpan < item.renderLaneCount;
+          const overlapsPreviousLane = item.renderLaneIndex < item.laneIndex;
           const overlapPixels = overlapsNextLane ? 28 : 0;
+          const operationGapPixels = overlapsPreviousLane ? 16 : 0;
           const itemStyle = {
             top: `${top + 2}px`,
-            left: `calc(${leftPercent}% + 6px)`,
-            width: `calc(${widthPercent}% - 12px + ${overlapPixels}px)`,
+            left: `calc(${leftPercent}% + 6px + ${operationGapPixels}px)`,
+            width: `calc(${widthPercent}% - 12px + ${overlapPixels}px - ${operationGapPixels}px)`,
             height: `${height}px`,
             zIndex: 20 + item.laneIndex
           };

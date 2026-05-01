@@ -1,9 +1,11 @@
 ﻿import { initializeApp, getApps } from "firebase/app";
 import {
   createUserWithEmailAndPassword,
+  browserLocalPersistence,
   getAuth,
   GoogleAuthProvider,
   onAuthStateChanged,
+  setPersistence,
   signInWithCredential,
   signInWithEmailAndPassword,
   signInWithPopup,
@@ -24,6 +26,7 @@ const DEFAULT_WORKSPACE_ID = "default";
 const GOOGLE_CALENDAR_SCOPE = "https://www.googleapis.com/auth/calendar.readonly";
 
 let googleCalendarAccessToken = null;
+let authPersistencePromise = null;
 
 const getEnv = () => import.meta.env || {};
 
@@ -82,7 +85,19 @@ const getFirebaseApp = () => {
 };
 
 const getAuthClient = () => {
-  return getAuth(getFirebaseApp());
+  const auth = getAuth(getFirebaseApp());
+  if (!authPersistencePromise) {
+    authPersistencePromise = setPersistence(auth, browserLocalPersistence).catch((error) => {
+      authPersistencePromise = null;
+      throw error;
+    });
+  }
+  return auth;
+};
+
+const ensureAuthPersistence = () => {
+  getAuthClient();
+  return authPersistencePromise || Promise.resolve();
 };
 
 const getDb = () => {
@@ -110,11 +125,11 @@ export const onFirebaseAuthChange = (callback) => {
 };
 
 export const signInWithEmail = (email, password) => {
-  return signInWithEmailAndPassword(getAuthClient(), email, password);
+  return ensureAuthPersistence().then(() => signInWithEmailAndPassword(getAuthClient(), email, password));
 };
 
 export const createAccountWithEmail = (email, password) => {
-  return createUserWithEmailAndPassword(getAuthClient(), email, password);
+  return ensureAuthPersistence().then(() => createUserWithEmailAndPassword(getAuthClient(), email, password));
 };
 
 const storeGoogleCalendarAccessToken = (accessToken) => {
@@ -123,15 +138,36 @@ const storeGoogleCalendarAccessToken = (accessToken) => {
 
 export const getGoogleCalendarAccessToken = () => googleCalendarAccessToken;
 
+const getGoogleCalendarTokenExpiry = (expiresIn) => {
+  return expiresIn ? Date.now() + Number(expiresIn) * 1000 : 0;
+};
+
 export const signInWithGoogle = () => {
   const desktopClientId = getGoogleDesktopClientId();
   const desktopClientSecret = getGoogleDesktopClientSecret();
 
   if (desktopClientId && typeof window !== "undefined" && window.api?.signInWithGoogleExternal) {
-    return window.api.signInWithGoogleExternal(desktopClientId, desktopClientSecret).then(({ idToken, accessToken }) => {
+    return window.api.signInWithGoogleExternal(desktopClientId, desktopClientSecret).then(({ idToken, accessToken, refreshToken, expiresIn }) => {
       storeGoogleCalendarAccessToken(accessToken);
       const credential = GoogleAuthProvider.credential(idToken, accessToken);
-      return signInWithCredential(getAuthClient(), credential);
+      return ensureAuthPersistence().then(() =>
+        signInWithCredential(getAuthClient(), credential).then((result) => {
+          if (window.api?.saveGoogleCalendarToken && (refreshToken || accessToken)) {
+            window.api
+              .saveGoogleCalendarToken({
+                uid: result.user.uid,
+                refreshToken,
+                accessToken,
+                expiresAt: getGoogleCalendarTokenExpiry(expiresIn)
+              })
+              .catch((error) => {
+                console.error("Failed to save Google Calendar token", error);
+              });
+          }
+
+          return result;
+        })
+      );
     });
   }
 
@@ -141,11 +177,30 @@ export const signInWithGoogle = () => {
     prompt: "consent select_account",
     include_granted_scopes: "true"
   });
-  return signInWithPopup(getAuthClient(), provider).then((result) => {
-    const credential = GoogleAuthProvider.credentialFromResult(result);
-    storeGoogleCalendarAccessToken(credential?.accessToken || null);
-    return result;
+  return ensureAuthPersistence().then(() =>
+    signInWithPopup(getAuthClient(), provider).then((result) => {
+      const credential = GoogleAuthProvider.credentialFromResult(result);
+      storeGoogleCalendarAccessToken(credential?.accessToken || null);
+      return result;
+    })
+  );
+};
+
+export const restoreGoogleCalendarAccessToken = async (user) => {
+  const desktopClientId = getGoogleDesktopClientId();
+  const desktopClientSecret = getGoogleDesktopClientSecret();
+
+  if (!user?.uid || !desktopClientId || typeof window === "undefined" || !window.api?.refreshGoogleCalendarToken) {
+    return null;
+  }
+
+  const tokenResult = await window.api.refreshGoogleCalendarToken({
+    uid: user.uid,
+    clientId: desktopClientId,
+    clientSecret: desktopClientSecret
   });
+  storeGoogleCalendarAccessToken(tokenResult?.accessToken || null);
+  return tokenResult?.accessToken || null;
 };
 
 export const signOutFirebase = () => {

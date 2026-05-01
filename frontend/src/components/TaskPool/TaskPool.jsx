@@ -115,34 +115,27 @@ export default function TaskPool({
         </div>
 
         {activeTab === "tasks" ? (
-          <>
-            <div className="px-4 pb-3">
-              <div className="rounded-lg border border-dashed border-[#2A3038] bg-[#111418]/70 px-4 py-3 text-center text-sm font-medium text-[#A8B2C0]">
-                ここからドラッグしてカレンダーに配置
+          <div className="flex-1 overflow-y-auto px-4 pb-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            {tasks.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-[#2A3038] bg-[#0B0E11] px-4 py-6 text-center">
+                <div className="text-sm font-medium text-[#B8C0CC]">未配置タスクはありません</div>
               </div>
-            </div>
-            <div className="flex-1 overflow-y-auto px-4 pb-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-              {tasks.length === 0 ? (
-                <div className="rounded-xl border border-dashed border-[#2A3038] bg-[#0B0E11] px-4 py-6 text-center">
-                  <div className="text-sm font-medium text-[#B8C0CC]">未配置タスクはありません</div>
-                </div>
-              ) : (
-                tasks.map((task) => (
-                  <TaskListItem
-                    key={task.id}
-                    task={task}
-                    isActive={selectedTaskId === task.id}
-                    isRelated={hoveredTaskId === task.id}
-                    suppressInlineTitleAutoEdit={editingTaskId === task.id}
-                    onDelete={onDeleteTask}
-                    onUpdateTaskTitle={onUpdateTaskTitle}
-                    onOpenDetail={onOpenDetail}
-                    onHoverTask={onHoverTask}
-                  />
-                ))
-              )}
-            </div>
-          </>
+            ) : (
+              tasks.map((task) => (
+                <TaskListItem
+                  key={task.id}
+                  task={task}
+                  isActive={selectedTaskId === task.id}
+                  isRelated={hoveredTaskId === task.id}
+                  suppressInlineTitleAutoEdit={editingTaskId === task.id}
+                  onDelete={onDeleteTask}
+                  onUpdateTaskTitle={onUpdateTaskTitle}
+                  onOpenDetail={onOpenDetail}
+                  onHoverTask={onHoverTask}
+                />
+              ))
+            )}
+          </div>
         ) : (
           <div className="flex-1 overflow-y-auto px-4 pb-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             {workflows.length === 0 ? (

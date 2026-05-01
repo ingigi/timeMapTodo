@@ -34,6 +34,7 @@ export default function AssignedBlock({
   onResizeTask
 }) {
   const dragCleanupRef = useRef(null);
+  const dragOffsetRef = useRef(null);
   const suppressClickRef = useRef(false);
   const [isDragging, setIsDragging] = useState(false);
   const [isResizing, setIsResizing] = useState(false);
@@ -113,6 +114,13 @@ export default function AssignedBlock({
         draggable
         onMouseEnter={() => onHoverTask(task.id, { deadlineDateKey: task.deadline || null, deadlineLabel: task.deadline || null })}
         onMouseLeave={() => onHoverTask(null)}
+        onPointerDown={(event) => {
+          const rect = event.currentTarget.getBoundingClientRect();
+          dragOffsetRef.current = {
+            x: event.clientX - rect.left,
+            y: event.clientY - rect.top
+          };
+        }}
         onClick={(event) => {
           if (suppressClickRef.current) {
             event.preventDefault();
@@ -133,7 +141,8 @@ export default function AssignedBlock({
             durationMinutes: dragDurationMinutes,
             completed: Boolean(task.completed),
             dragTitle: task.title || "Task",
-            dragColor: task.color || "#94a3b8"
+            dragColor: task.color || "#94a3b8",
+            dragOffsetY: dragOffsetRef.current?.y || 0
           };
           event.dataTransfer.effectAllowed = "move";
           event.dataTransfer.setData("taskId", task.id);
@@ -147,10 +156,12 @@ export default function AssignedBlock({
           event.dataTransfer.setData("durationMinutes", String(dragDurationMinutes));
           event.dataTransfer.setData("dragTitle", task.title || "Task");
           event.dataTransfer.setData("dragColor", task.color || "#94a3b8");
+          event.dataTransfer.setData("dragOffsetY", String(dragOffsetRef.current?.y || 0));
           setCurrentDrag(payload);
           dragCleanupRef.current = attachDragPreview(event, {
-            hideNativePreview: true,
             sourceElement: event.currentTarget,
+            offsetX: dragOffsetRef.current?.x,
+            offsetY: dragOffsetRef.current?.y,
             title: task.title || "Task",
             color: task.color || "#94a3b8",
             completed: task.completed
@@ -159,6 +170,7 @@ export default function AssignedBlock({
         onDragEnd={() => {
           setIsDragging(false);
           clearCurrentDrag();
+          dragOffsetRef.current = null;
           dragCleanupRef.current?.();
           dragCleanupRef.current = null;
           window.setTimeout(() => {
@@ -175,7 +187,7 @@ export default function AssignedBlock({
           isUntimed && "min-h-[28px] gap-0 rounded-md px-2 py-1.5",
           isTimed && "rounded-lg px-2 py-1",
           !isUntimed && !isTimed && "gap-2 rounded-xl px-3 py-2.5",
-          isDragging && "scale-[0.99] opacity-60",
+          isDragging && "opacity-0",
           isResizing && "ring-2 ring-[#0CCB8E]/60",
           task.completed && "opacity-75"
         )}
