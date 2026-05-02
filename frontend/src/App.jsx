@@ -1,5 +1,6 @@
 ﻿import { useState, useCallback, useRef, useEffect } from "react";
-import { Bell, LogOut, Minus, Moon, ShieldCheck, Square, Sun, User, X } from "lucide-react";
+import { createPortal } from "react-dom";
+import { ArrowLeft, Bell, LogOut, Minus, Settings2, ShieldCheck, Square, User, X } from "lucide-react";
 import MainLayout from "./components/layout/MainLayout";
 import TaskPool from "./components/TaskPool/TaskPool";
 import CalendarArea from "./components/CalendarArea/CalendarArea";
@@ -8,6 +9,16 @@ import LogoMark from "./components/Common/LogoMark";
 import { getTaskStats, getTaskStatus } from "./utils/taskTime";
 import { materializeWorkflowTasks, normalizeWorkflowRecord } from "./utils/workflows";
 import { addMonths, addWeeks, startOfWeek } from "./utils/dateUtils";
+import { normalizeNoteBlocks } from "./utils/noteBlocks";
+import {
+  ALL_TASKS_VIEW_ID,
+  DEFAULT_STATUS_OPTIONS,
+  filterTasksByView,
+  normalizeStatusOptions,
+  normalizeTagOptions,
+  normalizeViews,
+  sortTasksByView
+} from "./utils/taskViews";
 import {
   createAccountWithEmail,
   getFirebaseLegacyOwnerEmail,
@@ -36,6 +47,8 @@ const GOOGLE_SIGN_IN_TIMEOUT_MS = 90 * 1000;
 const EMPTY_APP_STATE = {
   tasks: [],
   tagOptions: [],
+  statusOptions: DEFAULT_STATUS_OPTIONS,
+  views: [],
   workflows: []
 };
 
@@ -64,7 +77,6 @@ const readPersistedUiSettings = () => {
     const sidebarWidth = Number(parsed.taskSidebarWidth);
     return {
       viewType: parsed.viewType === "month" ? "month" : "week",
-      theme: parsed.theme === "light" ? "light" : "dark",
       taskSidebarCollapsed: parsed.taskSidebarCollapsed === true,
       taskSidebarWidth:
         Number.isFinite(sidebarWidth) && sidebarWidth >= MIN_TASK_SIDEBAR_WIDTH && sidebarWidth <= MAX_TASK_SIDEBAR_WIDTH
@@ -117,12 +129,15 @@ const normalizeTaskRecord = (task, index = 0) => ({
   tags: Array.isArray(task.tags) ? task.tags : [],
   deadline: task.deadline || null,
   description: task.description || "",
+  noteBlocks: normalizeNoteBlocks(task.noteBlocks, task.description || ""),
   scheduledDate: task.scheduledDate || null,
   scheduledTime: task.scheduledTime || null,
   scheduledDurationMinutes: Number.isFinite(Number(task.scheduledDurationMinutes))
     ? Math.max(15, Number(task.scheduledDurationMinutes))
     : 60,
   completed: Boolean(task.completed),
+  statusId: task.completed ? "completed" : task.statusId || task.status || "not-started",
+  previousStatusId: task.previousStatusId || null,
   sourceWorkflowId: task.sourceWorkflowId || null,
   workflowRunKey: task.workflowRunKey || null
 });
@@ -174,9 +189,9 @@ const normalizeStoredAppState = (data) => {
 
   return {
     tasks: migratedTasks,
-    tagOptions: Array.from(new Set((data.tagOptions || migratedTasks.flatMap((task) => task.tags || [])))).sort((a, b) =>
-      a.localeCompare(b)
-    ),
+    tagOptions: normalizeTagOptions(data.tagOptions || migratedTasks.flatMap((task) => task.tags || [])),
+    statusOptions: normalizeStatusOptions(data.statusOptions),
+    views: normalizeViews(data.views),
     workflows: Array.isArray(data.workflows)
       ? data.workflows.map((workflow, index) => normalizeWorkflowRecord(workflow, index, TASK_COLORS))
       : []
@@ -232,7 +247,7 @@ function AuthWindowHeader() {
     >
       <div className="flex min-w-0 items-center gap-4" style={isDesktopApp ? { WebkitAppRegion: "no-drag" } : undefined}>
         <LogoMark className="h-8 w-8 shrink-0" />
-        <h1 className="text-lg font-semibold leading-6 tracking-tight text-[#F7F7F8]">TimeMapTodo</h1>
+        <h1 className="text-lg font-semibold leading-6 tracking-tight text-[#F7F7F8]">banboo</h1>
       </div>
       <DesktopWindowControls />
     </header>
@@ -307,7 +322,7 @@ function AuthGate({ authState, onGoogleSignIn, onSignIn, onCreateAccount }) {
       >
         <div className="mb-7">
           <LogoMark className="mb-4 h-11 w-11" />
-          <h1 className="text-2xl font-semibold text-[#F4F4F5]">TimeMapTodo</h1>
+          <h1 className="text-2xl font-semibold text-[#F4F4F5]">banboo</h1>
           <p className="mt-2 text-sm leading-6 text-[#A1A1AA]">Sign in to keep tasks synced across your devices.</p>
         </div>
 
@@ -317,7 +332,7 @@ function AuthGate({ authState, onGoogleSignIn, onSignIn, onCreateAccount }) {
           disabled={isGoogleSubmitting || isSubmitting || authState.status === "loading"}
           className="mb-4 flex w-full items-center justify-center gap-3 rounded-md bg-[#F4F4F5] px-4 py-3 text-sm font-semibold text-[#15161A] transition hover:bg-white disabled:cursor-not-allowed disabled:bg-[#52525B] disabled:text-[#A1A1AA]"
         >
-          <span className="flex h-5 w-5 items-center justify-center rounded-full bg-white text-xs font-bold text-[#0CCB8E]">
+          <span className="flex h-5 w-5 items-center justify-center rounded-full bg-white text-xs font-bold text-[#60B964]">
             G
           </span>
           {isGoogleSubmitting ? "Opening Google..." : "Continue with Google"}
@@ -349,7 +364,7 @@ function AuthGate({ authState, onGoogleSignIn, onSignIn, onCreateAccount }) {
             type="email"
             value={email}
             onChange={(event) => setEmail(event.target.value)}
-            className="w-full rounded-md border border-[#34363D] bg-[#15161A] px-3 py-2 text-sm text-[#F4F4F5] outline-none focus:border-[#0CCB8E] focus:ring-2 focus:ring-[#0CCB8E]/25"
+            className="w-full rounded-md border border-[#34363D] bg-[#15161A] px-3 py-2 text-sm text-[#F4F4F5] outline-none focus:border-[#60B964] focus:ring-2 focus:ring-[#60B964]/25"
             autoComplete="email"
             required
           />
@@ -361,7 +376,7 @@ function AuthGate({ authState, onGoogleSignIn, onSignIn, onCreateAccount }) {
             type="password"
             value={password}
             onChange={(event) => setPassword(event.target.value)}
-            className="w-full rounded-md border border-[#34363D] bg-[#15161A] px-3 py-2 text-sm text-[#F4F4F5] outline-none focus:border-[#0CCB8E] focus:ring-2 focus:ring-[#0CCB8E]/25"
+            className="w-full rounded-md border border-[#34363D] bg-[#15161A] px-3 py-2 text-sm text-[#F4F4F5] outline-none focus:border-[#60B964] focus:ring-2 focus:ring-[#60B964]/25"
             autoComplete={mode === "create" ? "new-password" : "current-password"}
             minLength={6}
             required
@@ -377,7 +392,7 @@ function AuthGate({ authState, onGoogleSignIn, onSignIn, onCreateAccount }) {
         <button
           type="submit"
           disabled={isSubmitting || isGoogleSubmitting || authState.status === "loading"}
-          className="w-full rounded-md bg-[#0CCB8E] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#10B981] disabled:cursor-not-allowed disabled:bg-[#52525B]"
+          className="w-full rounded-md bg-[#60B964] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#54A85C] disabled:cursor-not-allowed disabled:bg-[#52525B]"
         >
           {isSubmitting ? "Please wait..." : mode === "create" ? "Create account" : "Sign in"}
         </button>
@@ -388,13 +403,13 @@ function AuthGate({ authState, onGoogleSignIn, onSignIn, onCreateAccount }) {
             setMode((current) => (current === "create" ? "signin" : "create"));
             setErrorMessage("");
           }}
-          className="mt-3 w-full rounded-md border border-[#34363D] px-4 py-2 text-sm font-medium text-[#34D399] transition hover:bg-[#25272F]"
+          className="mt-3 w-full rounded-md border border-[#34363D] px-4 py-2 text-sm font-medium text-[#78D27F] transition hover:bg-[#25272F]"
         >
           {mode === "create" ? "Use an existing account" : "Create a new account"}
         </button>
 
         <div className="mt-5 flex items-center gap-2 rounded-md border border-[#34363D] bg-[#15161A] px-3 py-2 text-xs text-[#A1A1AA]">
-          <ShieldCheck className="h-4 w-4 shrink-0 text-[#0CCB8E]" />
+          <ShieldCheck className="h-4 w-4 shrink-0 text-[#60B964]" />
           <span>Google authentication protects each user's private workspace.</span>
         </div>
       </form>
@@ -402,16 +417,161 @@ function AuthGate({ authState, onGoogleSignIn, onSignIn, onCreateAccount }) {
   );
 }
 
-function AppHeader({ user, onSignOut, theme = "dark", onToggleTheme }) {
+function AppSettingsScreen({ user, googleCalendarStatus, googleCalendarError, onReconnectGoogleCalendar, onBack }) {
+  const [activeTab, setActiveTab] = useState("account");
+  const tabs = [
+    { id: "account", label: "アカウント" },
+    { id: "calendar", label: "Googleカレンダー" },
+    { id: "display", label: "表示" },
+    { id: "sync", label: "データと同期" },
+    { id: "about", label: "アプリ情報" }
+  ];
+
+  const renderContent = () => {
+    if (activeTab === "account") {
+      return (
+        <section className="rounded-xl border border-[#2A2F37] bg-[#111418] p-5">
+          <div className="text-xs font-bold uppercase tracking-[0.16em] text-[#8B949E]">Account</div>
+          <div className="mt-4 flex items-center gap-3">
+            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#1C1D22] text-[#AAB4C2]">
+              <User className="h-5 w-5" />
+            </span>
+            <div className="min-w-0">
+              <div className="truncate text-sm font-bold text-[#F7F7F8]">{user?.email || "Signed in"}</div>
+              <div className="mt-0.5 text-xs font-semibold text-[#8B949E]">Google アカウント</div>
+            </div>
+          </div>
+        </section>
+      );
+    }
+
+    if (activeTab === "calendar") {
+      const isCalendarReady = googleCalendarStatus === "ready";
+      const statusLabel =
+        isCalendarReady
+          ? "接続済み"
+          : googleCalendarStatus === "loading"
+            ? "接続確認中"
+            : googleCalendarStatus === "error"
+              ? "再接続が必要"
+              : "未接続";
+      return (
+        <section className="rounded-xl border border-[#2A2F37] bg-[#111418] p-5">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <div className="text-xs font-bold uppercase tracking-[0.16em] text-[#8B949E]">Google Calendar</div>
+              <h3 className="mt-2 text-lg font-bold text-[#F7F7F8]">予定の表示</h3>
+              <p className="mt-2 max-w-xl text-sm font-semibold leading-6 text-[#8B949E]">
+                ログイン中のGoogleアカウントの予定を週表示に読み込みます。banboo側から予定の編集は行いません。
+              </p>
+            </div>
+            <span
+              className={`shrink-0 rounded-full px-3 py-1 text-xs font-bold ${
+                isCalendarReady ? "bg-[#1F3423] text-[#78D27F]" : "bg-[#25272F] text-[#AAB4C2]"
+              }`}
+            >
+              {statusLabel}
+            </span>
+          </div>
+          {googleCalendarError ? <div className="mt-4 rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-sm font-semibold text-red-200">{googleCalendarError}</div> : null}
+          <button
+            type="button"
+            onClick={onReconnectGoogleCalendar}
+            disabled={googleCalendarStatus === "loading"}
+            className="mt-5 rounded-lg bg-[#60B964] px-4 py-2 text-sm font-bold text-[#06100D] transition-colors hover:bg-[#54A85C] disabled:cursor-wait disabled:opacity-70"
+          >
+            {isCalendarReady ? "Googleカレンダーを再接続" : googleCalendarStatus === "loading" ? "接続中..." : "Googleカレンダーを接続"}
+          </button>
+        </section>
+      );
+    }
+
+    if (activeTab === "display") {
+      return (
+        <section className="rounded-xl border border-[#2A2F37] bg-[#111418] p-5">
+          <div className="text-xs font-bold uppercase tracking-[0.16em] text-[#8B949E]">Display</div>
+          <h3 className="mt-2 text-lg font-bold text-[#F7F7F8]">表示設定</h3>
+          <div className="mt-4 space-y-3 text-sm font-semibold text-[#AAB4C2]">
+            <div className="rounded-lg border border-[#2A2F37] bg-[#15171C] px-4 py-3">テーマはダークモード固定です。</div>
+            <div className="rounded-lg border border-[#2A2F37] bg-[#15171C] px-4 py-3">左サイドバー幅とカレンダー表示は現在の操作状態を保存します。</div>
+          </div>
+        </section>
+      );
+    }
+
+    if (activeTab === "sync") {
+      return (
+        <section className="rounded-xl border border-[#2A2F37] bg-[#111418] p-5">
+          <div className="text-xs font-bold uppercase tracking-[0.16em] text-[#8B949E]">Data</div>
+          <h3 className="mt-2 text-lg font-bold text-[#F7F7F8]">データと同期</h3>
+          <p className="mt-2 max-w-xl text-sm font-semibold leading-6 text-[#8B949E]">
+            タスク、ビュー、ワークフロー、タグ、ステータスはログイン中のユーザーごとにFirebaseへ保存されます。
+          </p>
+        </section>
+      );
+    }
+
+    return (
+      <section className="rounded-xl border border-[#2A2F37] bg-[#111418] p-5">
+        <div className="text-xs font-bold uppercase tracking-[0.16em] text-[#8B949E]">About</div>
+        <h3 className="mt-2 text-lg font-bold text-[#F7F7F8]">banboo</h3>
+        <p className="mt-2 text-sm font-semibold text-[#8B949E]">タスクをカレンダーに配置して、予定と一緒に時間管理するためのアプリです。</p>
+      </section>
+    );
+  };
+
+  return (
+    <div className="flex h-full min-w-0 flex-1 flex-col overflow-hidden bg-[#06080A]">
+      <div className="flex h-14 shrink-0 items-center border-b border-[#20242A] px-6">
+        <button
+          type="button"
+          onClick={onBack}
+          className="flex h-9 w-9 items-center justify-center rounded-lg text-[#AAB4C2] transition-colors hover:bg-[#111418] hover:text-[#F7F7F8]"
+          title="戻る"
+        >
+          <ArrowLeft className="h-4 w-4" />
+        </button>
+      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto px-6 py-6 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <div className="mb-5">
+          <div className="text-[11px] font-bold uppercase tracking-[0.22em] text-[#8B949E]">SETTINGS</div>
+          <h2 className="mt-1 text-xl font-bold text-[#F7F7F8]">設定</h2>
+        </div>
+        <div className="grid w-full max-w-[980px] grid-cols-[220px_minmax(0,1fr)] gap-6">
+          <nav className="space-y-1 border-r border-[#20242A] pr-5">
+            {tabs.map((tab) => (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setActiveTab(tab.id)}
+                className={`w-full rounded-lg px-3 py-2 text-left text-sm font-bold transition-colors ${
+                  activeTab === tab.id ? "bg-[#1F3423] text-[#78D27F]" : "text-[#AAB4C2] hover:bg-[#111418] hover:text-[#F7F7F8]"
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </nav>
+          <div className="min-w-0 max-w-[620px]">{renderContent()}</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AppHeader({ user, onSignOut, onOpenSettings }) {
   const isDesktopApp = Boolean(window.api?.isDesktopApp);
   const [isAccountMenuOpen, setIsAccountMenuOpen] = useState(false);
+  const [accountMenuPosition, setAccountMenuPosition] = useState({ top: 56, right: 12 });
   const accountMenuRef = useRef(null);
+  const accountPanelRef = useRef(null);
 
   useEffect(() => {
     if (!isAccountMenuOpen) return;
 
     const handlePointerDown = (event) => {
       if (accountMenuRef.current?.contains(event.target)) return;
+      if (accountPanelRef.current?.contains(event.target)) return;
       setIsAccountMenuOpen(false);
     };
 
@@ -432,13 +592,13 @@ function AppHeader({ user, onSignOut, theme = "dark", onToggleTheme }) {
 
   return (
     <header
-      className="flex h-14 shrink-0 items-center justify-between border-b border-[#20242A] bg-[#0B0E11]/95 pl-4 backdrop-blur"
+      className="relative z-[70] flex h-14 shrink-0 items-center justify-between border-b border-[#20242A] bg-[#0B0E11]/95 pl-4 backdrop-blur"
       style={isDesktopApp ? { WebkitAppRegion: "drag" } : undefined}
     >
       <div className="flex min-w-0 items-center gap-4" style={isDesktopApp ? { WebkitAppRegion: "no-drag" } : undefined}>
         <LogoMark className="h-8 w-8 shrink-0" />
         <div className="min-w-0">
-          <h1 className="text-lg font-semibold leading-6 tracking-tight text-[#F7F7F8]">TimeMapTodo</h1>
+          <h1 className="text-lg font-semibold leading-6 tracking-tight text-[#F7F7F8]">banboo</h1>
         </div>
       </div>
 
@@ -450,20 +610,19 @@ function AppHeader({ user, onSignOut, theme = "dark", onToggleTheme }) {
         >
           <Bell className="h-4 w-4" />
         </button>
-        <button
-          type="button"
-          onClick={onToggleTheme}
-          className="flex h-9 w-9 items-center justify-center rounded-lg text-[#8B949E] transition-colors hover:bg-[#161A1F] hover:text-[#F7F7F8]"
-          title={theme === "light" ? "Dark mode" : "Light mode"}
-        >
-          {theme === "light" ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
-        </button>
         {user ? (
           <>
             <div className="relative" ref={accountMenuRef}>
               <button
                 type="button"
-                onClick={() => setIsAccountMenuOpen((current) => !current)}
+                onClick={(event) => {
+                  const rect = event.currentTarget.getBoundingClientRect();
+                  setAccountMenuPosition({
+                    top: rect.bottom + 10,
+                    right: Math.max(12, window.innerWidth - rect.right)
+                  });
+                  setIsAccountMenuOpen((current) => !current);
+                }}
                 className="flex max-w-[280px] items-center gap-2 rounded-lg px-3 py-1.5 text-sm font-medium text-[#8B949E] transition-colors hover:bg-[#161A1F] hover:text-[#F7F7F8]"
                 aria-expanded={isAccountMenuOpen}
                 aria-haspopup="menu"
@@ -474,29 +633,46 @@ function AppHeader({ user, onSignOut, theme = "dark", onToggleTheme }) {
                 <span className="hidden truncate sm:block">{user.email || "Signed in"}</span>
               </button>
 
-              {isAccountMenuOpen ? (
+              {isAccountMenuOpen
+                ? createPortal(
                 <div
-                  className="absolute right-0 top-[calc(100%+10px)] z-50 w-72 rounded-xl border border-[#252A32] bg-[#111418] p-2 shadow-[0_22px_70px_rgba(0,0,0,0.42)]"
+                  ref={accountPanelRef}
+                  className="fixed z-[160] w-72 rounded-xl border border-[#252A32] bg-[#111418] p-2 shadow-[0_22px_70px_rgba(0,0,0,0.42)]"
+                  style={{ top: accountMenuPosition.top, right: accountMenuPosition.right }}
                   role="menu"
                 >
                   <div className="border-b border-[#252A32] px-3 py-2">
-                    <div className="text-xs font-semibold uppercase tracking-[0.16em] text-[#6F7A88]">Account</div>
+                    <div className="text-xs font-semibold uppercase tracking-[0.16em] text-[#6F7A88]">ACCOUNT</div>
                     <div className="mt-1 truncate text-sm font-semibold text-[#E5E7EB]">{user.email || "Signed in"}</div>
                   </div>
                   <button
                     type="button"
                     onClick={() => {
                       setIsAccountMenuOpen(false);
-                      onSignOut();
+                      onOpenSettings?.();
                     }}
-                    className="mt-2 flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm font-semibold text-[#A8B2C0] transition-colors hover:bg-[#1A1F27] hover:text-[#F7F7F8]"
+                    className="mt-2 flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm font-bold text-[#D7DEE8] transition-colors hover:bg-[#1A1F27] hover:text-[#F7F7F8]"
                     role="menuitem"
                   >
-                    <LogOut className="h-4 w-4" />
-                    Sign out
+                    <Settings2 className="h-4 w-4 text-[#8B949E]" />
+                    アプリ設定
                   </button>
-                </div>
-              ) : null}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsAccountMenuOpen(false);
+                      onSignOut();
+                    }}
+                    className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm font-bold text-[#D7DEE8] transition-colors hover:bg-[#1A1F27] hover:text-[#F7F7F8]"
+                    role="menuitem"
+                  >
+                    <LogOut className="h-4 w-4 text-[#8B949E]" />
+                    サインアウト
+                  </button>
+                </div>,
+                document.body
+              )
+                : null}
             </div>
           </>
         ) : null}
@@ -537,25 +713,26 @@ function App() {
   const [persistedUiSettings] = useState(() => readPersistedUiSettings());
   const [appState, setAppState] = useState({
     tasks: isFirebaseConfigured() ? [] : MOCK_TASKS.map(normalizeTaskRecord),
-    tagOptions: isFirebaseConfigured()
-      ? []
-      : Array.from(new Set(MOCK_TASKS.flatMap((task) => task.tags || []))).sort((a, b) => a.localeCompare(b)),
+    tagOptions: isFirebaseConfigured() ? [] : normalizeTagOptions(MOCK_TASKS.flatMap((task) => task.tags || [])),
+    statusOptions: DEFAULT_STATUS_OPTIONS,
+    views: [],
     workflows: []
   });
+  const [activeScreen, setActiveScreen] = useState("calendar");
+  const [activeTaskViewId, setActiveTaskViewId] = useState(ALL_TASKS_VIEW_ID);
   const [selectedTaskId, setSelectedTaskId] = useState(null);
   const [baseDate, setBaseDate] = useState(new Date());
   const [viewType, setViewType] = useState(persistedUiSettings.viewType || "week");
-  const [theme, setTheme] = useState(persistedUiSettings.theme || "dark");
   const [taskSidebarWidth, setTaskSidebarWidth] = useState(persistedUiSettings.taskSidebarWidth || DEFAULT_TASK_SIDEBAR_WIDTH);
   const [isTaskSidebarCollapsed, setIsTaskSidebarCollapsed] = useState(Boolean(persistedUiSettings.taskSidebarCollapsed));
   const [isTaskSidebarPeeking, setIsTaskSidebarPeeking] = useState(false);
   const [isTaskSidebarDragPeeking, setIsTaskSidebarDragPeeking] = useState(false);
   const [isTaskSidebarInspectorPinned, setIsTaskSidebarInspectorPinned] = useState(false);
-  const [isTaskSidebarAnimating, setIsTaskSidebarAnimating] = useState(false);
   const [isResizingTaskSidebar, setIsResizingTaskSidebar] = useState(false);
   const [editingTaskId, setEditingTaskId] = useState(null);
   const [isInspectorMounted, setIsInspectorMounted] = useState(false);
   const [isInspectorVisible, setIsInspectorVisible] = useState(false);
+  const [isInspectorClosing, setIsInspectorClosing] = useState(false);
   const [inspectorShouldFocusTitle, setInspectorShouldFocusTitle] = useState(false);
   const [hoveredTaskId, setHoveredTaskId] = useState(null);
   const [hoveredTaskMeta, setHoveredTaskMeta] = useState(null);
@@ -566,7 +743,7 @@ function App() {
   const [googleCalendarRefreshVersion, setGoogleCalendarRefreshVersion] = useState(0);
   const saveTimeoutRef = useRef(null);
   const inspectorCloseTimeoutRef = useRef(null);
-  const taskSidebarAnimationTimeoutRef = useRef(null);
+  const inspectorOpenAnimationRef = useRef(false);
   const taskSidebarContainerRef = useRef(null);
   const droppedOnPeekingSidebarRef = useRef(false);
   const remoteApplyingRef = useRef(false);
@@ -708,14 +885,18 @@ function App() {
 
     setEditingTaskId(taskId);
     setInspectorShouldFocusTitle(Boolean(options.focusTitle));
+    setIsInspectorClosing(false);
+    if (!isInspectorMounted || !isInspectorVisible || editingTaskId !== taskId) {
+      setIsInspectorVisible(false);
+      inspectorOpenAnimationRef.current = true;
+    }
     setIsInspectorMounted(true);
-    requestAnimationFrame(() => {
-      setIsInspectorVisible(true);
-    });
-  }, [isTaskSidebarCollapsed, isTaskSidebarDragPeeking, isTaskSidebarPeeking]);
+  }, [editingTaskId, isInspectorMounted, isInspectorVisible, isTaskSidebarCollapsed, isTaskSidebarDragPeeking, isTaskSidebarPeeking]);
 
   const closeInspector = useCallback(() => {
+    inspectorOpenAnimationRef.current = false;
     setIsInspectorVisible(false);
+    setIsInspectorClosing(true);
     setIsTaskSidebarInspectorPinned(false);
     if (isTaskSidebarCollapsed) {
       setIsTaskSidebarPeeking(false);
@@ -728,40 +909,24 @@ function App() {
 
     inspectorCloseTimeoutRef.current = setTimeout(() => {
       setIsInspectorMounted(false);
+      setIsInspectorClosing(false);
       setEditingTaskId(null);
       setInspectorShouldFocusTitle(false);
       inspectorCloseTimeoutRef.current = null;
-    }, 340);
+    }, 460);
   }, [isTaskSidebarCollapsed]);
 
   const toggleTaskSidebar = useCallback(() => {
-    if (taskSidebarAnimationTimeoutRef.current) {
-      clearTimeout(taskSidebarAnimationTimeoutRef.current);
-    }
-
-    setIsTaskSidebarAnimating(true);
     setIsTaskSidebarCollapsed((current) => !current);
     setIsTaskSidebarPeeking(false);
     setIsTaskSidebarDragPeeking(false);
     setIsTaskSidebarInspectorPinned(false);
-
-    taskSidebarAnimationTimeoutRef.current = setTimeout(() => {
-      setIsTaskSidebarAnimating(false);
-      taskSidebarAnimationTimeoutRef.current = null;
-    }, 820);
-  }, []);
-
-  const toggleTheme = useCallback(() => {
-    setTheme((current) => (current === "light" ? "dark" : "light"));
   }, []);
 
   useEffect(() => {
     return () => {
       if (inspectorCloseTimeoutRef.current) {
         clearTimeout(inspectorCloseTimeoutRef.current);
-      }
-      if (taskSidebarAnimationTimeoutRef.current) {
-        clearTimeout(taskSidebarAnimationTimeoutRef.current);
       }
     };
   }, []);
@@ -853,7 +1018,6 @@ function App() {
 
     const uiSettings = {
       viewType,
-      theme,
       taskSidebarWidth,
       taskSidebarCollapsed: isTaskSidebarCollapsed
     };
@@ -863,13 +1027,13 @@ function App() {
     } catch (error) {
       console.warn("Failed to save UI settings", error);
     }
-  }, [viewType, theme, taskSidebarWidth, isTaskSidebarCollapsed, isLoaded]);
+  }, [viewType, taskSidebarWidth, isTaskSidebarCollapsed, isLoaded]);
 
   useEffect(() => {
-    document.documentElement.style.colorScheme = theme;
-    document.documentElement.classList.toggle("theme-light", theme === "light");
-    document.documentElement.classList.toggle("theme-dark", theme !== "light");
-  }, [theme]);
+    document.documentElement.style.colorScheme = "dark";
+    document.documentElement.classList.remove("theme-light");
+    document.documentElement.classList.add("theme-dark");
+  }, []);
 
   useEffect(() => {
     if (!isLoaded) return;
@@ -997,8 +1161,11 @@ function App() {
             tags: [],
             deadline: null,
             description: "",
+            noteBlocks: [],
             scheduledDate: null,
-            completed: false
+            completed: false,
+            statusId: "not-started",
+            previousStatusId: null
           }
         ]
       };
@@ -1008,7 +1175,30 @@ function App() {
   const handleUpdateTaskDetails = useCallback((taskId, updates) => {
     setAppState((prev) => ({
       ...prev,
-      tasks: prev.tasks.map((task) => (task.id === taskId ? normalizeTaskRecord({ ...task, ...updates }) : task))
+      tasks: prev.tasks.map((task) => {
+        if (task.id !== taskId) return task;
+        const merged = { ...task, ...updates };
+        if (updates.completed === true) {
+          merged.previousStatusId = task.statusId === "completed" ? task.previousStatusId : task.statusId || "not-started";
+          merged.statusId = "completed";
+        }
+        if (updates.completed === false && task.completed) {
+          merged.statusId =
+            task.previousStatusId && prev.statusOptions.some((status) => status.id === task.previousStatusId)
+              ? task.previousStatusId
+              : "not-started";
+          merged.previousStatusId = null;
+        }
+        if (updates.statusId && updates.statusId !== "completed") {
+          merged.completed = false;
+          merged.previousStatusId = null;
+        }
+        if (updates.statusId === "completed") {
+          merged.completed = true;
+          merged.previousStatusId = task.statusId === "completed" ? task.previousStatusId : task.statusId || "not-started";
+        }
+        return normalizeTaskRecord(merged);
+      })
     }));
   }, []);
 
@@ -1082,7 +1272,23 @@ function App() {
   const handleToggleTaskComplete = useCallback((taskId) => {
     setAppState((prev) => ({
       ...prev,
-      tasks: prev.tasks.map((task) => (task.id === taskId ? { ...task, completed: !task.completed } : task))
+      tasks: prev.tasks.map((task) => {
+        if (task.id !== taskId) return task;
+        if (task.completed) {
+          const restoredStatusId =
+            task.previousStatusId && prev.statusOptions.some((status) => status.id === task.previousStatusId)
+              ? task.previousStatusId
+              : "not-started";
+          return { ...task, completed: false, statusId: restoredStatusId, previousStatusId: null };
+        }
+
+        return {
+          ...task,
+          completed: true,
+          previousStatusId: task.statusId === "completed" ? task.previousStatusId : task.statusId || "not-started",
+          statusId: "completed"
+        };
+      })
     }));
   }, []);
 
@@ -1092,7 +1298,7 @@ function App() {
 
     setAppState((prev) => ({
       ...prev,
-      tagOptions: prev.tagOptions.includes(trimmed) ? prev.tagOptions : [...prev.tagOptions, trimmed].sort((a, b) => a.localeCompare(b))
+      tagOptions: prev.tagOptions.includes(trimmed) ? prev.tagOptions : [...prev.tagOptions, trimmed]
     }));
   }, []);
 
@@ -1113,7 +1319,7 @@ function App() {
 
     setAppState((prev) => {
       const mergedTags = prev.tagOptions.map((tag) => (tag === oldTagName ? trimmedNext : tag));
-      const uniqueTagOptions = Array.from(new Set(mergedTags)).sort((a, b) => a.localeCompare(b));
+      const uniqueTagOptions = normalizeTagOptions(mergedTags);
 
       return {
         ...prev,
@@ -1125,6 +1331,100 @@ function App() {
       };
     });
 
+  }, []);
+
+  const handleReorderTagOptions = useCallback((fromIndex, toIndex) => {
+    setAppState((prev) => {
+      const nextTags = [...prev.tagOptions];
+      const [moved] = nextTags.splice(fromIndex, 1);
+      nextTags.splice(toIndex, 0, moved);
+      return { ...prev, tagOptions: nextTags };
+    });
+  }, []);
+
+  const handleCreateStatusOption = useCallback((statusName) => {
+    const trimmed = statusName.trim();
+    if (!trimmed) return;
+    setAppState((prev) => ({
+      ...prev,
+      statusOptions: [...prev.statusOptions, { id: `status_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`, name: trimmed, standard: false }]
+    }));
+  }, []);
+
+  const handleRenameStatusOption = useCallback((statusId, nextName) => {
+    const trimmed = nextName.trim();
+    if (!statusId || !trimmed) return;
+    setAppState((prev) => ({
+      ...prev,
+      statusOptions: prev.statusOptions.map((status) => (status.id === statusId ? { ...status, name: trimmed } : status))
+    }));
+  }, []);
+
+  const handleDeleteStatusOption = useCallback((statusId) => {
+    setAppState((prev) => {
+      const status = prev.statusOptions.find((item) => item.id === statusId);
+      if (!status || status.standard) return prev;
+      return {
+        ...prev,
+        statusOptions: prev.statusOptions.filter((item) => item.id !== statusId),
+        tasks: prev.tasks.map((task) => ({
+          ...task,
+          statusId: task.statusId === statusId ? "not-started" : task.statusId,
+          previousStatusId: task.previousStatusId === statusId ? "not-started" : task.previousStatusId
+        }))
+      };
+    });
+  }, []);
+
+  const handleReorderStatusOptions = useCallback((fromIndex, toIndex) => {
+    setAppState((prev) => {
+      const nextStatuses = [...prev.statusOptions];
+      const [moved] = nextStatuses.splice(fromIndex, 1);
+      nextStatuses.splice(toIndex, 0, moved);
+      return { ...prev, statusOptions: nextStatuses };
+    });
+  }, []);
+
+  const handleSaveTaskView = useCallback((viewDraft) => {
+    setAppState((prev) => {
+      const normalizedView = {
+        id: viewDraft.id || `view_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+        name: viewDraft.name?.trim() || "新しいビュー",
+        locked: false,
+        filters: Array.isArray(viewDraft.filters) ? viewDraft.filters : [],
+        sorts: Array.isArray(viewDraft.sorts) ? viewDraft.sorts : []
+      };
+      const exists = prev.views.some((view) => view.id === normalizedView.id);
+      const views = exists
+        ? prev.views.map((view) => (view.id === normalizedView.id ? { ...view, ...normalizedView } : view))
+        : [...prev.views, normalizedView];
+      setActiveTaskViewId(normalizedView.id);
+      return { ...prev, views };
+    });
+  }, []);
+
+  const handleDeleteTaskView = useCallback((viewId) => {
+    setAppState((prev) => {
+      const views = normalizeViews(prev.views);
+      if (views.length <= 1) return prev;
+
+      const nextViews = views.filter((view) => view.id !== viewId);
+      if (nextViews.length === views.length || nextViews.length === 0) return prev;
+
+      setActiveTaskViewId((current) => (current === viewId ? nextViews[0].id : current));
+      return { ...prev, views: nextViews };
+    });
+  }, []);
+
+  const handleReorderTaskViews = useCallback((fromIndex, toIndex) => {
+    setAppState((prev) => {
+      const views = normalizeViews(prev.views);
+      if (fromIndex < 0 || toIndex < 0 || fromIndex >= views.length || toIndex >= views.length) return prev;
+      const nextViews = [...views];
+      const [moved] = nextViews.splice(fromIndex, 1);
+      nextViews.splice(toIndex, 0, moved);
+      return { ...prev, views: nextViews };
+    });
   }, []);
 
   const handleCreateWorkflow = useCallback((workflowDraft) => {
@@ -1143,9 +1443,32 @@ function App() {
       return {
         ...prev,
         workflows: [...prev.workflows, normalizedWorkflow],
-        tagOptions: Array.from(new Set([...prev.tagOptions, ...(normalizedWorkflow.template.tags || [])])).sort((a, b) =>
-          a.localeCompare(b)
-        )
+        tagOptions: normalizeTagOptions([...prev.tagOptions, ...(normalizedWorkflow.template.tags || [])])
+      };
+    });
+  }, []);
+
+  const handleUpdateWorkflow = useCallback((workflowDraft) => {
+    setAppState((prev) => {
+      const workflowIndex = prev.workflows.findIndex((workflow) => workflow.id === workflowDraft.id);
+      if (workflowIndex < 0) return prev;
+
+      const previousWorkflow = prev.workflows[workflowIndex];
+      const normalizedWorkflow = normalizeWorkflowRecord(
+        {
+          ...previousWorkflow,
+          ...workflowDraft,
+          id: previousWorkflow.id,
+          generatedRunKeys: previousWorkflow.generatedRunKeys || []
+        },
+        workflowIndex,
+        TASK_COLORS
+      );
+
+      return {
+        ...prev,
+        workflows: prev.workflows.map((workflow) => (workflow.id === normalizedWorkflow.id ? normalizedWorkflow : workflow)),
+        tagOptions: normalizeTagOptions([...prev.tagOptions, ...(normalizedWorkflow.template.tags || [])])
       };
     });
   }, []);
@@ -1171,15 +1494,41 @@ function App() {
     return {
       ...task,
       ...stats,
-      status: getTaskStatus(task)
+      status: getTaskStatus(task),
+      statusId: task.completed ? "completed" : task.statusId || "not-started"
     };
   });
 
-  const visiblePoolTasks = tasksWithStats.filter((task) => !task.scheduledDate);
+  const taskViews = normalizeViews(appState.views);
+  const statusOptions = normalizeStatusOptions(appState.statusOptions);
+  const activeTaskView = taskViews.find((view) => view.id === activeTaskViewId) || taskViews[0];
+  const visiblePoolTasks = sortTasksByView(
+    filterTasksByView(tasksWithStats, activeTaskView),
+    activeTaskView,
+    appState.tagOptions,
+    statusOptions
+  );
   const boardFilteredTasks = tasksWithStats.filter((task) => task.scheduledDate);
   const scheduledTasksByDate = groupTasksByScheduledDate(boardFilteredTasks);
   const availableTags = appState.tagOptions;
   const editingTaskData = editingTaskId ? appState.tasks.find((task) => task.id === editingTaskId) : null;
+
+  useEffect(() => {
+    if (!inspectorOpenAnimationRef.current || !isInspectorMounted || !editingTaskData || isInspectorVisible) return undefined;
+
+    let nextFrameId = null;
+    const frameId = requestAnimationFrame(() => {
+      nextFrameId = requestAnimationFrame(() => {
+        inspectorOpenAnimationRef.current = false;
+        setIsInspectorVisible(true);
+      });
+    });
+
+    return () => {
+      cancelAnimationFrame(frameId);
+      if (nextFrameId) cancelAnimationFrame(nextFrameId);
+    };
+  }, [editingTaskData, isInspectorMounted, isInspectorVisible]);
 
   const handleOpenTaskDetail = useCallback(
     (taskId, options = {}) => {
@@ -1193,8 +1542,25 @@ function App() {
     setHoveredTaskMeta(taskId ? meta : null);
   }, []);
 
+  const handleJumpToScheduledTask = useCallback((task) => {
+    if (!task?.scheduledDate) {
+      openInspector(task.id);
+      return;
+    }
+
+    const [year, month, day] = task.scheduledDate.split("-").map(Number);
+    if (year && month && day) {
+      setBaseDate(new Date(year, month - 1, day));
+    }
+    setSelectedTaskId(task.id);
+    setHoveredTaskId(task.id);
+    setHoveredTaskMeta({ deadlineDateKey: task.deadline || null });
+    window.setTimeout(() => setHoveredTaskId((current) => (current === task.id ? null : current)), 1500);
+  }, [openInspector]);
+
   const handleSignOut = useCallback(() => {
     closeInspector();
+    setActiveScreen("calendar");
     setAuthState({
       status: "signed-out",
       user: null,
@@ -1228,15 +1594,18 @@ function App() {
   }, []);
 
   const handleTaskSidebarResizeStart = useCallback((event) => {
-    if (isTaskSidebarCollapsed) return;
-
     event.preventDefault();
+    event.stopPropagation();
 
     const startX = event.clientX;
     const startWidth = taskSidebarWidth;
     const maxWidthForViewport = Math.min(MAX_TASK_SIDEBAR_WIDTH, Math.max(MIN_TASK_SIDEBAR_WIDTH, window.innerWidth - 520));
 
     setIsResizingTaskSidebar(true);
+    if (isTaskSidebarCollapsed) {
+      setIsTaskSidebarPeeking(true);
+      setIsTaskSidebarDragPeeking(false);
+    }
     document.body.style.cursor = "col-resize";
     document.body.style.userSelect = "none";
 
@@ -1261,13 +1630,10 @@ function App() {
   const hoveredTaskDeadlineKey = hoveredTaskMeta?.deadlineDateKey || hoveredTask?.deadline || null;
   const shouldShowTaskSidebar = !isTaskSidebarCollapsed || isTaskSidebarPeeking || isTaskSidebarDragPeeking || isTaskSidebarInspectorPinned;
   const taskSidebarSlotMotionClass =
-    isTaskSidebarAnimating && !isTaskSidebarInspectorPinned
+    !isResizingTaskSidebar
       ? "transition-[width,min-width,max-width,flex-basis] duration-[760ms] ease-[cubic-bezier(0.16,1,0.3,1)]"
       : "transition-none";
-  const taskSidebarMotionClass =
-    (isTaskSidebarAnimating || isTaskSidebarPeeking || isTaskSidebarDragPeeking) && !isTaskSidebarInspectorPinned
-      ? "transition-transform duration-[760ms] ease-[cubic-bezier(0.16,1,0.3,1)]"
-      : "transition-none";
+  const taskSidebarMotionClass = "transition-transform duration-[760ms] ease-[cubic-bezier(0.16,1,0.3,1)]";
   const taskSidebarSlotWidth = isTaskSidebarCollapsed ? COLLAPSED_TASK_SIDEBAR_RAIL_WIDTH : taskSidebarWidth;
 
   if (!isLoaded) {
@@ -1286,17 +1652,16 @@ function App() {
   }
 
   return (
-    <MainLayout
-      theme={theme}
-      header={
-        <AppHeader
+    <MainLayout header={<AppHeader user={authState.user} onSignOut={handleSignOut} onOpenSettings={() => setActiveScreen("settings")} />}>
+      {activeScreen === "settings" ? (
+        <AppSettingsScreen
           user={authState.user}
-          onSignOut={handleSignOut}
-          theme={theme}
-          onToggleTheme={toggleTheme}
+          googleCalendarStatus={googleCalendarStatus}
+          googleCalendarError={googleCalendarError}
+          onReconnectGoogleCalendar={handleReconnectGoogleCalendar}
+          onBack={() => setActiveScreen("calendar")}
         />
-      }
-    >
+      ) : (
       <div className="relative flex h-full min-w-0 flex-1 overflow-hidden">
         <div
           className={`relative z-40 shrink-0 overflow-visible bg-[#06080A] ${taskSidebarSlotMotionClass}`}
@@ -1320,7 +1685,9 @@ function App() {
               if (isTaskSidebarCollapsed) setIsTaskSidebarPeeking(true);
             }}
             onMouseLeave={() => {
-              if (isTaskSidebarCollapsed && !isTaskSidebarDragPeeking && !isTaskSidebarInspectorPinned) setIsTaskSidebarPeeking(false);
+              if (isTaskSidebarCollapsed && !isResizingTaskSidebar && !isTaskSidebarDragPeeking && !isTaskSidebarInspectorPinned) {
+                setIsTaskSidebarPeeking(false);
+              }
             }}
             onDragEnter={(event) => {
               if (!isTaskSidebarCollapsed) return;
@@ -1342,20 +1709,61 @@ function App() {
           >
             <TaskPool
               tasks={visiblePoolTasks}
+              views={taskViews}
+              activeViewId={activeTaskView.id}
+              taskSidebarWidth={taskSidebarWidth}
+              statusOptions={statusOptions}
               workflows={appState.workflows}
               selectedTaskId={selectedTaskId}
               hoveredTaskId={hoveredTaskId}
               onSelectTask={setSelectedTaskId}
+              onSelectView={setActiveTaskViewId}
+              onSaveView={handleSaveTaskView}
+              onDeleteView={handleDeleteTaskView}
+              onReorderView={handleReorderTaskViews}
               onCreateInlineTask={handleCreateInlineTask}
               onCreateWorkflow={handleCreateWorkflow}
+              onUpdateWorkflow={handleUpdateWorkflow}
               onToggleWorkflowEnabled={handleToggleWorkflowEnabled}
               onDeleteWorkflow={handleDeleteWorkflow}
               onDeleteTask={handleDeleteTask}
               onOpenDetail={handleOpenTaskDetail}
+              onJumpToScheduledTask={handleJumpToScheduledTask}
               onHoverTask={handleHoverTask}
               onUnscheduleTask={handleUnscheduleTask}
               availableTags={availableTags}
+              onCreateTag={handleCreateTagOption}
+              onRenameTag={handleRenameTagOption}
+              onDeleteTag={handleDeleteTagOption}
+              onReorderTag={handleReorderTagOptions}
+              onCreateStatus={handleCreateStatusOption}
+              onRenameStatus={handleRenameStatusOption}
+              onDeleteStatus={handleDeleteStatusOption}
+              onReorderStatus={handleReorderStatusOptions}
             />
+
+            {isTaskSidebarCollapsed ? (
+              <div
+                className={`group absolute inset-y-0 right-[-4px] z-30 w-3 cursor-col-resize transition-colors ${
+                  isResizingTaskSidebar ? "bg-[#101820]" : "hover:bg-[#0C1116]/80"
+                }`}
+                onPointerDown={handleTaskSidebarResizeStart}
+                role="separator"
+                aria-orientation="vertical"
+                aria-label="Resize task sidebar"
+              >
+                <div
+                  className={`absolute inset-y-0 left-1/2 w-px -translate-x-1/2 transition-colors ${
+                    isResizingTaskSidebar ? "bg-[#78D27F]" : "bg-[#20242A] group-hover:bg-[#78D27F]/70"
+                  }`}
+                />
+                <div
+                  className={`absolute left-1/2 top-1/2 h-14 w-1 -translate-x-1/2 -translate-y-1/2 rounded-full transition-colors ${
+                    isResizingTaskSidebar ? "bg-[#78D27F]" : "bg-transparent group-hover:bg-[#78D27F]/60"
+                  }`}
+                />
+              </div>
+            ) : null}
           </div>
 
           {isTaskSidebarCollapsed ? (
@@ -1364,7 +1772,7 @@ function App() {
               style={{ width: `${COLLAPSED_TASK_SIDEBAR_RAIL_WIDTH}px` }}
               onMouseEnter={() => setIsTaskSidebarPeeking(true)}
               onMouseLeave={() => {
-                if (!isTaskSidebarDragPeeking && !isTaskSidebarInspectorPinned) setIsTaskSidebarPeeking(false);
+                if (!isResizingTaskSidebar && !isTaskSidebarDragPeeking && !isTaskSidebarInspectorPinned) setIsTaskSidebarPeeking(false);
               }}
               onDragEnter={(event) => {
                 event.preventDefault();
@@ -1382,7 +1790,7 @@ function App() {
               }}
               role="button"
               tabIndex={0}
-              aria-label="タスク一覧を開く"
+              aria-label="Toggle task sidebar"
               onKeyDown={(event) => {
                 if (event.key === "Enter" || event.key === " ") {
                   event.preventDefault();
@@ -1390,9 +1798,9 @@ function App() {
                 }
               }}
             >
-              <div className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-[#20242A] transition-colors group-hover:bg-[#67D391]/70" />
+              <div className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-[#20242A] transition-colors group-hover:bg-[#78D27F]/70" />
               <div
-                className={`absolute inset-y-0 left-0 w-[3px] rounded-r-full bg-[#67D391] shadow-[0_0_22px_rgba(103,211,145,0.45)] transition-opacity ${
+                className={`absolute inset-y-0 left-0 w-[3px] rounded-r-full bg-[#78D27F] shadow-[0_0_22px_rgba(120,210,127,0.45)] transition-opacity ${
                   isTaskSidebarPeeking ? "opacity-100" : "opacity-0 group-hover:opacity-100"
                 }`}
               />
@@ -1408,16 +1816,16 @@ function App() {
             onPointerDown={handleTaskSidebarResizeStart}
             role="separator"
             aria-orientation="vertical"
-            aria-label="タスク一覧の幅を変更"
+            aria-label="Resize task sidebar"
           >
             <div
               className={`absolute inset-y-0 left-1/2 w-px -translate-x-1/2 transition-colors ${
-                isResizingTaskSidebar ? "bg-[#67D391]" : "bg-[#20242A] group-hover:bg-[#67D391]/70"
+                isResizingTaskSidebar ? "bg-[#78D27F]" : "bg-[#20242A] group-hover:bg-[#78D27F]/70"
               }`}
             />
             <div
               className={`absolute left-1/2 top-1/2 h-14 w-1 -translate-x-1/2 -translate-y-1/2 rounded-full transition-colors ${
-                isResizingTaskSidebar ? "bg-[#67D391]" : "bg-transparent group-hover:bg-[#67D391]/60"
+                isResizingTaskSidebar ? "bg-[#78D27F]" : "bg-transparent group-hover:bg-[#78D27F]/60"
               }`}
             />
           </div>
@@ -1430,14 +1838,15 @@ function App() {
             }`}
           >
             <div
-              className={`h-full w-[min(720px,calc(100vw-48px))] transition-[opacity,transform] duration-[340ms] ease-[cubic-bezier(0.22,1,0.36,1)] ${
-                isInspectorVisible ? "translate-x-0 opacity-100" : "translate-x-full opacity-0"
+              className={`task-inspector-panel h-full w-[min(720px,calc(100vw-48px))] ${
+                isInspectorVisible ? "is-open" : isInspectorClosing ? "is-closed" : ""
               }`}
             >
               <HandDrawnPopup
                 key={editingTaskData.id}
                 task={editingTaskData}
                 availableTags={availableTags}
+                statusOptions={statusOptions}
                 onCreateTag={handleCreateTagOption}
                 onDeleteTag={handleDeleteTagOption}
                 onRenameTag={handleRenameTagOption}
@@ -1475,6 +1884,7 @@ function App() {
           />
         </div>
       </div>
+      )}
     </MainLayout>
   );
 }

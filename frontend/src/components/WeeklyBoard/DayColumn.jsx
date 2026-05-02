@@ -1,4 +1,4 @@
-import { Check } from "lucide-react";
+﻿import { Check } from "lucide-react";
 import { useState } from "react";
 import AssignedBlock from "./AssignedBlock";
 import { getTaskPalette } from "../../utils/taskColors";

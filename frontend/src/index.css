@@ -1,8 +1,8 @@
 ﻿@import "tailwindcss";
 
 @theme {
-  --color-primary: #0CCB8E;
-  --color-primary-hover: #10B981;
+  --color-primary: #60B964;
+  --color-primary-hover: #54A85C;
   --color-primary-soft: rgba(12, 203, 142, 0.16);
   --color-secondary: #2563EB;
   --color-board-bg: #06080A;
@@ -160,6 +160,42 @@ html.theme-light body {
 
 .theme-light .task-date-input {
   color-scheme: light;
+}
+
+@keyframes inspector-slide-in {
+  from {
+    opacity: 0;
+    transform: translateX(100%);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes inspector-slide-out {
+  from {
+    opacity: 1;
+    transform: translateX(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateX(100%);
+  }
+}
+
+.task-inspector-panel {
+  opacity: 0;
+  transform: translateX(100%);
+  will-change: opacity, transform;
+}
+
+.task-inspector-panel.is-open {
+  animation: inspector-slide-in 560ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.task-inspector-panel.is-closed {
+  animation: inspector-slide-out 440ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
 }
 
 

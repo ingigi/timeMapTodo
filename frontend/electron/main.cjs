@@ -204,14 +204,14 @@ function createOAuthCallbackServer(expectedState) {
 
       if (error || !code) {
         response.writeHead(400, { "Content-Type": "text/html; charset=utf-8" });
-        response.end("<h1>Sign-in failed</h1><p>You can close this tab and return to TimeMapTodo.</p>");
+        response.end("<h1>Sign-in failed</h1><p>You can close this tab and return to banboo.</p>");
         reject(new Error(error || "Missing OAuth authorization code."));
         closeServer();
         return;
       }
 
       response.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-      response.end("<h1>Sign-in complete</h1><p>You can close this tab and return to TimeMapTodo.</p>");
+      response.end("<h1>Sign-in complete</h1><p>You can close this tab and return to banboo.</p>");
       resolve({ code });
       closeServer();
     });
@@ -473,8 +473,13 @@ function migrateScheduledTasks(tasks = [], boardState = {}) {
       tags: Array.isArray(task.tags) ? task.tags : [],
       deadline: task.deadline || null,
       description: task.description || "",
+      noteBlocks: Array.isArray(task.noteBlocks) ? task.noteBlocks : [],
       scheduledDate: task.scheduledDate ?? migrated?.scheduledDate ?? null,
+      scheduledTime: task.scheduledTime || null,
+      scheduledDurationMinutes: Number.isFinite(Number(task.scheduledDurationMinutes)) ? Number(task.scheduledDurationMinutes) : 60,
       completed: task.completed ?? migrated?.completed ?? false,
+      statusId: task.completed ? "completed" : task.statusId || task.status || "not-started",
+      previousStatusId: task.previousStatusId || null,
       sourceWorkflowId: task.sourceWorkflowId || null,
       workflowRunKey: task.workflowRunKey || null
     };
@@ -493,6 +498,8 @@ function normalizeStoredData(data) {
     tagOptions: Array.isArray(data.tagOptions)
       ? data.tagOptions
       : Array.from(new Set(normalizedTasks.flatMap((task) => task.tags || []))).sort((a, b) => a.localeCompare(b)),
+    statusOptions: Array.isArray(data.statusOptions) ? data.statusOptions : [],
+    views: Array.isArray(data.views) ? data.views : [],
     workflows: Array.isArray(data.workflows)
       ? data.workflows.map((workflow) => ({
           id: workflow.id,

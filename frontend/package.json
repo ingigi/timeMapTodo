@@ -1,5 +1,5 @@
 {
-  "name": "frontend",
+  "name": "banboo",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -15,7 +15,7 @@
   },
   "build": {
     "appId": "com.timemaptodo.app",
-    "productName": "TimeMapTodo",
+    "productName": "banboo",
     "directories": {
       "output": "release/"
     },

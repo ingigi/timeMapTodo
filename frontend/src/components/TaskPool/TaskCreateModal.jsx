@@ -58,7 +58,7 @@ export default function TaskCreateModal({ onSave, onClose, allTasks }) {
               type="text"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              className="w-full rounded-lg border border-[#34363D] bg-[#15161A] px-3 py-2.5 text-sm text-[#F4F4F5] outline-none transition placeholder:text-[#71717A] focus:border-[#0CCB8E] focus:ring-2 focus:ring-[#0CCB8E]/25"
+              className="w-full rounded-lg border border-[#34363D] bg-[#15161A] px-3 py-2.5 text-sm text-[#F4F4F5] outline-none transition placeholder:text-[#71717A] focus:border-[#60B964] focus:ring-2 focus:ring-[#60B964]/25"
               placeholder="例: ホームページのデザイン"
             />
           </div>
@@ -68,7 +68,7 @@ export default function TaskCreateModal({ onSave, onClose, allTasks }) {
             <select
               value={parentId}
               onChange={(e) => setParentId(e.target.value)}
-              className="w-full rounded-lg border border-[#34363D] bg-[#15161A] px-3 py-2.5 text-sm text-[#F4F4F5] outline-none transition focus:border-[#0CCB8E] focus:ring-2 focus:ring-[#0CCB8E]/25"
+              className="w-full rounded-lg border border-[#34363D] bg-[#15161A] px-3 py-2.5 text-sm text-[#F4F4F5] outline-none transition focus:border-[#60B964] focus:ring-2 focus:ring-[#60B964]/25"
             >
               <option value="">なし</option>
               {allTasks.map((task) => (
@@ -103,7 +103,7 @@ export default function TaskCreateModal({ onSave, onClose, allTasks }) {
           <button
             onClick={handleSave}
             disabled={!title.trim()}
-            className="rounded-lg bg-[#0CCB8E] px-5 py-2.5 text-sm font-semibold text-[#06100D] shadow-sm transition-colors hover:bg-[#10B981] disabled:cursor-not-allowed disabled:opacity-50"
+            className="rounded-lg bg-[#60B964] px-5 py-2.5 text-sm font-semibold text-[#06100D] transition-colors hover:bg-[#54A85C] disabled:cursor-not-allowed disabled:opacity-50"
           >
             作成
           </button>

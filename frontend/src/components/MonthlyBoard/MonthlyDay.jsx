@@ -218,7 +218,7 @@ export default function MonthlyDay({
         <div className="flex min-w-0 items-start gap-2">
           <div
             className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-sm font-semibold ${
-              isToday ? "bg-[#0CCB8E] text-[#06100D]" : !isCurrentMonth ? "text-[#3B424B]" : weekendTextClass
+              isToday ? "bg-[#60B964] text-[#06100D]" : !isCurrentMonth ? "text-[#3B424B]" : weekendTextClass
             }`}
             style={
               isDeadlineDay

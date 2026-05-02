@@ -1,4 +1,4 @@
-import clsx from "clsx";
+﻿import clsx from "clsx";
 import { useEffect, useRef } from "react";
 import { Trash2 } from "lucide-react";
 import { attachDragPreview } from "../../utils/dragPreview";
@@ -11,14 +11,16 @@ export default function TaskListItem({
   isRelated,
   onDelete,
   onOpenDetail,
+  onJumpToScheduledTask,
   onHoverTask
 }) {
-  const { id, title, color, status = "NotStarted", deadline } = task;
+  const { id, title, color, deadline, scheduledDate } = task;
   const dragCleanupRef = useRef(null);
   const dragOffsetRef = useRef(null);
   const suppressClickRef = useRef(false);
   const palette = getTaskPalette(color);
-  const isCompleted = status === "Completed";
+  const isCompleted = task.completed || task.statusId === "completed";
+  const isScheduled = Boolean(scheduledDate);
 
   useEffect(() => {
     return () => {
@@ -31,8 +33,9 @@ export default function TaskListItem({
     <div
       className={clsx(
         "group mb-2 flex select-none items-center gap-3 rounded-xl border px-3 py-3 transition-all",
-        !isRelated && !isActive && "border-[#20242A] hover:border-[#0CCB8E]/30 hover:shadow-[0_8px_24px_rgba(12,203,142,0.05)]",
-        isCompleted && "opacity-75"
+        !isRelated && !isActive && "border-[#20242A] hover:border-[#60B964]/30 hover:shadow-[0_8px_24px_rgba(96,185,100,0.05)]",
+        (isCompleted || isScheduled) && "opacity-60",
+        isScheduled ? "cursor-pointer" : "cursor-grab active:cursor-grabbing"
       )}
       onMouseEnter={() => onHoverTask(id, { deadlineDateKey: deadline || null })}
       onMouseLeave={() => onHoverTask(null)}
@@ -40,6 +43,11 @@ export default function TaskListItem({
         if (suppressClickRef.current) {
           event.preventDefault();
           event.stopPropagation();
+          return;
+        }
+
+        if (isScheduled) {
+          onJumpToScheduledTask?.(task);
           return;
         }
 
@@ -56,9 +64,11 @@ export default function TaskListItem({
             ? { borderColor: palette.border, backgroundColor: "var(--surface-raised, #0B0E11)", boxShadow: `0 8px 18px ${palette.shadow}` }
             : isCompleted
               ? { borderColor: palette.completedBorder, backgroundColor: palette.completedSurface }
-              : { backgroundColor: "var(--surface-raised, #0B0E11)" }
+              : isScheduled
+                ? { borderColor: "#20242A", backgroundColor: "var(--surface-raised, #0B0E11)" }
+                : { backgroundColor: "var(--surface-raised, #0B0E11)" }
       }
-      draggable
+      draggable={!isScheduled}
       onPointerDown={(event) => {
         const rect = event.currentTarget.getBoundingClientRect();
         dragOffsetRef.current = {
@@ -67,6 +77,11 @@ export default function TaskListItem({
         };
       }}
       onDragStart={(event) => {
+        if (isScheduled) {
+          event.preventDefault();
+          return;
+        }
+
         suppressClickRef.current = true;
         const payload = {
           dragType: "task",
@@ -107,7 +122,7 @@ export default function TaskListItem({
         }, 120);
       }}
     >
-      <div className="h-10 w-1 shrink-0 rounded-full" style={{ backgroundColor: color || "#94a3b8" }} />
+      <div className="h-10 w-1 shrink-0 rounded-full" style={{ backgroundColor: color || "#94a3b8", opacity: isScheduled ? 0.45 : 1 }} />
 
       <div className="min-w-0 flex-1">
         <div
@@ -116,18 +131,26 @@ export default function TaskListItem({
         >
           {title || "無題のタスク"}
         </div>
+        {isScheduled ? (
+          <div className="mt-1 truncate text-[11px] font-semibold text-[#748092]">
+            {scheduledDate}
+            {task.scheduledTime ? ` ${task.scheduledTime}` : ""}
+          </div>
+        ) : null}
       </div>
 
-      <button
-        onClick={(event) => {
-          event.stopPropagation();
-          onDelete(id);
-        }}
-        className="rounded-lg p-2 text-[#8B949E] opacity-0 transition-all hover:bg-red-500/10 hover:text-red-300 group-hover:opacity-100"
-        title="削除"
-      >
-        <Trash2 className="h-3.5 w-3.5" />
-      </button>
+      {!isScheduled ? (
+        <button
+          onClick={(event) => {
+            event.stopPropagation();
+            onDelete(id);
+          }}
+          className="rounded-lg p-2 text-[#8B949E] opacity-0 transition-all hover:bg-red-500/10 hover:text-red-300 group-hover:opacity-100"
+          title="削除"
+        >
+          <Trash2 className="h-3.5 w-3.5" />
+        </button>
+      ) : null}
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+﻿import { useState } from 'react';
 import { X } from 'lucide-react';
 
 const DAY_NAMES = ["月曜日", "火曜日", "水曜日", "木曜日", "金曜日", "土曜日", "日曜日"];
@@ -54,7 +54,7 @@ export default function CapacitySettingsModal({ initialCapacities, onSave, onClo
                   max="24"
                   value={capacities[idx]}
                   onChange={(e) => handleChange(idx, e.target.value)}
-                  className="w-16 rounded-lg border border-[#34363D] bg-[#15161A] px-2 py-1.5 text-center text-sm font-semibold text-[#F4F4F5] outline-none transition focus:border-[#0CCB8E] focus:ring-2 focus:ring-[#0CCB8E]/25"
+                  className="w-16 rounded-lg border border-[#34363D] bg-[#15161A] px-2 py-1.5 text-center text-sm font-semibold text-[#F4F4F5] outline-none transition focus:border-[#60B964] focus:ring-2 focus:ring-[#60B964]/25"
                 />
                 <span className="w-8 text-sm font-medium text-[#A1A1AA]">h/d</span>
               </div>
@@ -71,7 +71,7 @@ export default function CapacitySettingsModal({ initialCapacities, onSave, onClo
           </button>
           <button 
             onClick={handleSave}
-            className="rounded-lg bg-[#0CCB8E] px-5 py-2.5 text-sm font-semibold text-[#06100D] shadow-sm transition-colors hover:bg-[#10B981]"
+            className="rounded-lg bg-[#60B964] px-5 py-2.5 text-sm font-semibold text-[#06100D] transition-colors hover:bg-[#54A85C]"
           >
             変更を保存
           </button>

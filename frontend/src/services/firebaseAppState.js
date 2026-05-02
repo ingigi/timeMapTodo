@@ -24,6 +24,8 @@ const APP_STATE_COLLECTION = "timemaptodoWorkspaces";
 const USERS_COLLECTION = "users";
 const DEFAULT_WORKSPACE_ID = "default";
 const GOOGLE_CALENDAR_SCOPE = "https://www.googleapis.com/auth/calendar.readonly";
+const GOOGLE_CALENDAR_TOKEN_STORAGE_KEY = "timemaptodo-google-calendar-token-v1";
+const WEB_GOOGLE_CALENDAR_TOKEN_TTL_MS = 55 * 60 * 1000;
 
 let googleCalendarAccessToken = null;
 let authPersistencePromise = null;
@@ -132,6 +134,64 @@ export const createAccountWithEmail = (email, password) => {
   return ensureAuthPersistence().then(() => createUserWithEmailAndPassword(getAuthClient(), email, password));
 };
 
+const readStoredGoogleCalendarTokens = () => {
+  if (typeof window === "undefined") return {};
+
+  try {
+    const raw = window.localStorage.getItem(GOOGLE_CALENDAR_TOKEN_STORAGE_KEY);
+    return raw ? JSON.parse(raw) || {} : {};
+  } catch (error) {
+    console.warn("Failed to read Google Calendar token storage", error);
+    return {};
+  }
+};
+
+const writeStoredGoogleCalendarTokens = (tokensByUid) => {
+  if (typeof window === "undefined") return;
+
+  try {
+    window.localStorage.setItem(GOOGLE_CALENDAR_TOKEN_STORAGE_KEY, JSON.stringify(tokensByUid));
+  } catch (error) {
+    console.warn("Failed to write Google Calendar token storage", error);
+  }
+};
+
+const persistGoogleCalendarAccessToken = ({ user, accessToken, expiresAt }) => {
+  if (!user?.uid || !accessToken) return;
+
+  const tokensByUid = readStoredGoogleCalendarTokens();
+  tokensByUid[user.uid] = {
+    accessToken,
+    expiresAt: Number(expiresAt || 0)
+  };
+  writeStoredGoogleCalendarTokens(tokensByUid);
+};
+
+const restorePersistedGoogleCalendarAccessToken = (user) => {
+  if (!user?.uid) return null;
+
+  const tokensByUid = readStoredGoogleCalendarTokens();
+  const tokenRecord = tokensByUid[user.uid];
+  if (!tokenRecord?.accessToken) return null;
+
+  if (tokenRecord.expiresAt && tokenRecord.expiresAt <= Date.now()) {
+    delete tokensByUid[user.uid];
+    writeStoredGoogleCalendarTokens(tokensByUid);
+    return null;
+  }
+
+  return tokenRecord.accessToken;
+};
+
+const clearPersistedGoogleCalendarAccessToken = (user) => {
+  if (!user?.uid) return;
+
+  const tokensByUid = readStoredGoogleCalendarTokens();
+  if (!tokensByUid[user.uid]) return;
+  delete tokensByUid[user.uid];
+  writeStoredGoogleCalendarTokens(tokensByUid);
+};
+
 const storeGoogleCalendarAccessToken = (accessToken) => {
   googleCalendarAccessToken = accessToken || null;
 };
@@ -180,7 +240,15 @@ export const signInWithGoogle = () => {
   return ensureAuthPersistence().then(() =>
     signInWithPopup(getAuthClient(), provider).then((result) => {
       const credential = GoogleAuthProvider.credentialFromResult(result);
-      storeGoogleCalendarAccessToken(credential?.accessToken || null);
+      const accessToken = credential?.accessToken || null;
+      storeGoogleCalendarAccessToken(accessToken);
+      if (accessToken) {
+        persistGoogleCalendarAccessToken({
+          user: result.user,
+          accessToken,
+          expiresAt: Date.now() + WEB_GOOGLE_CALENDAR_TOKEN_TTL_MS
+        });
+      }
       return result;
     })
   );
@@ -191,7 +259,9 @@ export const restoreGoogleCalendarAccessToken = async (user) => {
   const desktopClientSecret = getGoogleDesktopClientSecret();
 
   if (!user?.uid || !desktopClientId || typeof window === "undefined" || !window.api?.refreshGoogleCalendarToken) {
-    return null;
+    const persistedAccessToken = restorePersistedGoogleCalendarAccessToken(user);
+    storeGoogleCalendarAccessToken(persistedAccessToken);
+    return persistedAccessToken;
   }
 
   const tokenResult = await window.api.refreshGoogleCalendarToken({
@@ -204,6 +274,7 @@ export const restoreGoogleCalendarAccessToken = async (user) => {
 };
 
 export const signOutFirebase = () => {
+  clearPersistedGoogleCalendarAccessToken(getAuthClient().currentUser);
   storeGoogleCalendarAccessToken(null);
   return signOut(getAuthClient());
 };

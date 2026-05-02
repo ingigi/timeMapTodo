@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+﻿import { useRef, useState } from "react";
 import clsx from "clsx";
 import { Check, RotateCcw, Undo2 } from "lucide-react";
 import { attachDragPreview } from "../../utils/dragPreview";
@@ -188,7 +188,7 @@ export default function AssignedBlock({
           isTimed && "rounded-lg px-2 py-1",
           !isUntimed && !isTimed && "gap-2 rounded-xl px-3 py-2.5",
           isDragging && "opacity-0",
-          isResizing && "ring-2 ring-[#0CCB8E]/60",
+          isResizing && "ring-2 ring-[#60B964]/60",
           task.completed && "opacity-75"
         )}
       >

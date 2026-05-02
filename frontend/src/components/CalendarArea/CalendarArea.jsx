@@ -1,4 +1,4 @@
-import { useState } from "react";
+﻿import { useState } from "react";
 import { ChevronLeft, ChevronRight, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import WeeklyBoard from "../WeeklyBoard/WeeklyBoard";
 import MonthlyBoard from "../MonthlyBoard/MonthlyBoard";
@@ -69,7 +69,7 @@ export default function CalendarArea({
           <button
             type="button"
             onClick={onToggleTaskSidebar}
-            className="flex h-11 w-11 items-center justify-center rounded-xl border border-[#20242A] bg-[#090C0F] text-[#B4BDCA] shadow-[0_12px_32px_rgba(0,0,0,0.28)] transition-colors hover:border-[#34363D] hover:bg-[#111418] hover:text-[#F7F7F8]"
+            className="flex h-11 w-11 items-center justify-center rounded-xl text-[#B4BDCA] transition-colors hover:bg-[#111418] hover:text-[#F7F7F8]"
             title={isTaskSidebarCollapsed ? "\u30bf\u30b9\u30af\u4e00\u89a7\u3092\u958b\u304f" : "\u30bf\u30b9\u30af\u4e00\u89a7\u3092\u9589\u3058\u308b"}
           >
             {isTaskSidebarCollapsed ? <PanelLeftOpen className="h-5 w-5" /> : <PanelLeftClose className="h-5 w-5" />}
@@ -99,7 +99,7 @@ export default function CalendarArea({
           <button
             type="button"
             onClick={handleToday}
-            className="rounded-lg border border-[#20242A] bg-[#090C0F] px-4 py-2 text-sm font-medium text-[#F7F7F8] transition-colors hover:border-[#0CCB8E]/40 hover:bg-[#111418]"
+            className="rounded-lg border border-[#20242A] bg-[#090C0F] px-4 py-2 text-sm font-medium text-[#F7F7F8] transition-colors hover:border-[#60B964]/40 hover:bg-[#111418]"
           >
             今日
           </button>
@@ -108,7 +108,7 @@ export default function CalendarArea({
             <button type="button" onClick={handlePrev} className="rounded-lg p-2 text-[#F7F7F8] hover:bg-[#111418]">
               <ChevronLeft className="h-4 w-4" />
             </button>
-            <button type="button" className="min-w-[180px] text-center hover:text-[#0CCB8E]" onClick={handleToday}>
+            <button type="button" className="min-w-[180px] text-center hover:text-[#60B964]" onClick={handleToday}>
               {formattedDateRange()}
             </button>
             <button type="button" onClick={handleNext} className="rounded-lg p-2 text-[#F7F7F8] hover:bg-[#111418]">

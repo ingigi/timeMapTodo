@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+﻿import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { formatMonthLabel, getDateRangeDates, startOfWeek } from "../../utils/dateUtils";
 import DayColumn from "./DayColumn";
 
@@ -26,6 +26,7 @@ export default function WeeklyBoard({
   onOpenDetail
 }) {
   const dates = useMemo(() => getDateRangeDates(startOfWeek(baseDate), 0, 6), [baseDate]);
+  const timeGridScrollRef = useRef(null);
   const [currentMinute, setCurrentMinute] = useState(getCurrentMinuteOfDay);
   const todayIndex = dates.findIndex((day) => day.isToday);
   const deadlineIndex = dates.findIndex((day) => hoveredTaskDeadline === day.dateKey);
@@ -50,6 +51,20 @@ export default function WeeklyBoard({
     return () => window.clearInterval(timerId);
   }, []);
 
+  useLayoutEffect(() => {
+    const scrollContainer = timeGridScrollRef.current;
+    if (!scrollContainer) return undefined;
+
+    const frameId = requestAnimationFrame(() => {
+      const nowTop = (getCurrentMinuteOfDay() / 60) * HOUR_HEIGHT;
+      const targetTop = nowTop - scrollContainer.clientHeight * 0.32;
+      const maxScrollTop = scrollContainer.scrollHeight - scrollContainer.clientHeight;
+      scrollContainer.scrollTop = Math.max(0, Math.min(maxScrollTop, targetTop));
+    });
+
+    return () => cancelAnimationFrame(frameId);
+  }, [baseDate]);
+
   return (
     <div className="flex h-full min-h-0 flex-col bg-[#06080A]">
       <div className="relative shrink-0 border-b border-[#2A3038] bg-[#06080A]">
@@ -69,7 +84,7 @@ export default function WeeklyBoard({
                 className="border-r border-[#2A3038] bg-[#06080A] px-3 py-3 text-center transition-all last:border-r-0"
               >
               <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-[#687384]">{day.monthLabel}</div>
-              <div className={`text-[10px] font-bold uppercase tracking-tighter ${isDeadlineDay ? "text-[#FBBF24]" : day.isToday ? "text-[#0CCB8E]" : "text-[#B8C0CC]"}`}>
+              <div className={`text-[10px] font-bold uppercase tracking-tighter ${isDeadlineDay ? "text-[#FBBF24]" : day.isToday ? "text-[#60B964]" : "text-[#B8C0CC]"}`}>
                 {day.dayName}
               </div>
               <div className="mt-1 flex justify-center">
@@ -78,7 +93,7 @@ export default function WeeklyBoard({
                     isDeadlineDay
                       ? "bg-[#F59E0B] text-[#1C1203] shadow-[0_0_20px_rgba(245,158,11,0.3)]"
                       : day.isToday
-                        ? "bg-[#0CCB8E] text-[#06100D] shadow-[0_0_24px_rgba(12,203,142,0.25)]"
+                        ? "bg-[#60B964] text-[#06100D] shadow-[0_0_24px_rgba(96,185,100,0.25)]"
                         : "text-[#EEF2F6]"
                   }`}
                 >
@@ -112,7 +127,10 @@ export default function WeeklyBoard({
         </div>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto bg-[#06080A] [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+      <div
+        ref={timeGridScrollRef}
+        className="min-h-0 flex-1 overflow-y-auto bg-[#06080A] [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]"
+      >
         <div className="relative grid min-w-0 grid-cols-[64px_repeat(7,minmax(0,1fr))]" style={{ height: `${HOURS.length * HOUR_HEIGHT}px` }}>
           <div className="pointer-events-none absolute inset-0 z-0">
             {HOURS.map((hour, index) => (
@@ -130,8 +148,8 @@ export default function WeeklyBoard({
                 <div key={`${day.dateKey}-now-line`} className="relative h-px">
                   {day.isToday ? (
                     <div className="absolute inset-x-0 top-0 flex items-center">
-                      <span className="-ml-[5px] h-2.5 w-2.5 rounded-full bg-[#0CCB8E] shadow-[0_0_16px_rgba(12,203,142,0.75)]" />
-                      <span className="h-px flex-1 bg-[#0CCB8E] shadow-[0_0_16px_rgba(12,203,142,0.55)]" />
+                      <span className="-ml-[5px] h-2.5 w-2.5 rounded-full bg-[#60B964] shadow-[0_0_16px_rgba(96,185,100,0.75)]" />
+                      <span className="h-px flex-1 bg-[#60B964] shadow-[0_0_16px_rgba(96,185,100,0.55)]" />
                     </div>
                   ) : null}
                 </div>

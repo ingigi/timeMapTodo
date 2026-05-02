@@ -3,13 +3,12 @@ import { createPortal } from "react-dom";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   CalendarDays,
+  Check,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
   Minus,
   Plus,
-  Repeat,
-  Sparkles,
   X
 } from "lucide-react";
 import { getAnchoredPopoverPlacement } from "../../utils/popoverPosition";
@@ -79,11 +78,7 @@ const isSameDay = (left, right) =>
   left.getMonth() === right.getMonth() &&
   left.getDate() === right.getDate();
 
-const splitTags = (value) =>
-  value
-    .split(",")
-    .map((tag) => tag.trim())
-    .filter(Boolean);
+const normalizeTags = (tags) => Array.from(new Set(tags.map((tag) => tag.trim()).filter(Boolean)));
 
 function PickerField({ label, children }) {
   return (
@@ -94,32 +89,36 @@ function PickerField({ label, children }) {
   );
 }
 
-export default function TaskWorkflowModal({ availableTags = [], onSave, onClose }) {
-  const [workflowName, setWorkflowName] = useState("");
-  const [title, setTitle] = useState("");
-  const [description, setDescription] = useState("");
-  const [tagsInput, setTagsInput] = useState("");
-  const [color, setColor] = useState(COLOR_OPTIONS[0]);
-  const [frequency, setFrequency] = useState("weekly");
-  const [startDate, setStartDate] = useState(formatToday);
-  const [weekdays, setWeekdays] = useState([1]);
-  const [dayOfMonth, setDayOfMonth] = useState(1);
-  const [dueOffsetDays, setDueOffsetDays] = useState(0);
+export default function TaskWorkflowModal({ workflow = null, availableTags = [], onSave, onClose }) {
+  const [workflowName, setWorkflowName] = useState(() => workflow?.name || "");
+  const [title, setTitle] = useState(() => workflow?.template?.title || "");
+  const [description, setDescription] = useState(() => workflow?.template?.description || "");
+  const [selectedTags, setSelectedTags] = useState(() => normalizeTags(workflow?.template?.tags || []));
+  const [color, setColor] = useState(() => workflow?.template?.color || COLOR_OPTIONS[0]);
+  const [frequency, setFrequency] = useState(() => workflow?.schedule?.frequency || "weekly");
+  const [startDate, setStartDate] = useState(() => workflow?.schedule?.startDate || formatToday());
+  const [weekdays, setWeekdays] = useState(() => workflow?.schedule?.weekdays || [1]);
+  const [dayOfMonth, setDayOfMonth] = useState(() => workflow?.schedule?.dayOfMonth || 1);
+  const [dueOffsetDays, setDueOffsetDays] = useState(() => workflow?.template?.dueOffsetDays || 0);
+  const [isTagMenuOpen, setIsTagMenuOpen] = useState(false);
   const [isFrequencyMenuOpen, setIsFrequencyMenuOpen] = useState(false);
   const [isDatePickerOpen, setIsDatePickerOpen] = useState(false);
+  const [tagMenuPosition, setTagMenuPosition] = useState(null);
   const [datePickerMonth, setDatePickerMonth] = useState(() => startOfMonth(parseDateValue(formatToday()) || new Date()));
   const [frequencyMenuPosition, setFrequencyMenuPosition] = useState(null);
   const [datePickerPosition, setDatePickerPosition] = useState(null);
+  const tagButtonRef = useRef(null);
+  const tagMenuRef = useRef(null);
   const frequencyButtonRef = useRef(null);
   const frequencyMenuRef = useRef(null);
   const startDateButtonRef = useRef(null);
   const startDatePickerRef = useRef(null);
 
-  const currentTags = useMemo(() => splitTags(tagsInput), [tagsInput]);
-  const suggestedTags = useMemo(
-    () => availableTags.filter((tag) => !currentTags.includes(tag)).slice(0, 6),
-    [availableTags, currentTags]
-  );
+  const selectableTags = useMemo(() => normalizeTags(availableTags), [availableTags]);
+
+  const toggleTag = (tag) => {
+    setSelectedTags((prev) => (prev.includes(tag) ? prev.filter((item) => item !== tag) : [...prev, tag]));
+  };
 
   const selectedDate = useMemo(() => parseDateValue(startDate), [startDate]);
   const formattedStartDate = useMemo(() => formatDateLabel(startDate), [startDate]);
@@ -155,18 +154,13 @@ export default function TaskWorkflowModal({ availableTags = [], onSave, onClose 
 
   const canSave = title.trim().length > 0 && startDate && (frequency !== "weekly" || weekdays.length > 0);
 
-  const previewLabel =
-    frequency === "daily"
-      ? "毎日"
-      : frequency === "weekly"
-        ? `毎週${WEEKDAY_OPTIONS.filter((option) => weekdays.includes(option.value))
-            .map((option) => option.label)
-            .join("・")}`
-        : `毎月${dayOfMonth}日`;
-
   useEffect(() => {
     const handleEsc = (event) => {
       if (event.key === "Escape") {
+        if (isTagMenuOpen) {
+          setIsTagMenuOpen(false);
+          return;
+        }
         if (isDatePickerOpen) {
           setIsDatePickerOpen(false);
           return;
@@ -181,11 +175,21 @@ export default function TaskWorkflowModal({ availableTags = [], onSave, onClose 
 
     window.addEventListener("keydown", handleEsc);
     return () => window.removeEventListener("keydown", handleEsc);
-  }, [isDatePickerOpen, isFrequencyMenuOpen, onClose]);
+  }, [isTagMenuOpen, isDatePickerOpen, isFrequencyMenuOpen, onClose]);
 
   useEffect(() => {
     const handlePointerDown = (event) => {
       const target = event.target;
+
+      if (
+        isTagMenuOpen &&
+        tagMenuRef.current &&
+        !tagMenuRef.current.contains(target) &&
+        tagButtonRef.current &&
+        !tagButtonRef.current.contains(target)
+      ) {
+        setIsTagMenuOpen(false);
+      }
 
       if (
         isFrequencyMenuOpen &&
@@ -210,7 +214,34 @@ export default function TaskWorkflowModal({ availableTags = [], onSave, onClose 
 
     document.addEventListener("pointerdown", handlePointerDown, true);
     return () => document.removeEventListener("pointerdown", handlePointerDown, true);
-  }, [isDatePickerOpen, isFrequencyMenuOpen]);
+  }, [isTagMenuOpen, isDatePickerOpen, isFrequencyMenuOpen]);
+
+  useLayoutEffect(() => {
+    if (!isTagMenuOpen || !tagButtonRef.current) return;
+
+    const frame = requestAnimationFrame(() => {
+      if (!tagButtonRef.current) return;
+      setTagMenuPosition(getAnchoredPopoverPlacement(tagButtonRef.current, { width: 360, height: 320 }));
+    });
+
+    return () => cancelAnimationFrame(frame);
+  }, [isTagMenuOpen, selectedTags.length, selectableTags.length]);
+
+  useEffect(() => {
+    if (!isTagMenuOpen) return;
+
+    const handleReposition = () => {
+      if (!tagButtonRef.current) return;
+      setTagMenuPosition(getAnchoredPopoverPlacement(tagButtonRef.current, { width: 360, height: 320 }));
+    };
+
+    window.addEventListener("resize", handleReposition);
+    window.addEventListener("scroll", handleReposition, true);
+    return () => {
+      window.removeEventListener("resize", handleReposition);
+      window.removeEventListener("scroll", handleReposition, true);
+    };
+  }, [isTagMenuOpen]);
 
   useLayoutEffect(() => {
     if (!isFrequencyMenuOpen || !frequencyButtonRef.current) return;
@@ -261,12 +292,68 @@ export default function TaskWorkflowModal({ availableTags = [], onSave, onClose 
     };
   }, [isFrequencyMenuOpen]);
 
+  const tagMenu =
+    isTagMenuOpen && tagMenuPosition
+      ? createPortal(
+          <div
+            ref={tagMenuRef}
+            className="fixed z-[100] overflow-hidden rounded-2xl border border-[#20242A] bg-[#111418] p-3 shadow-[0_24px_60px_rgba(0,0,0,0.48)]"
+            style={{
+              top: `${tagMenuPosition.top}px`,
+              left: `${tagMenuPosition.left}px`,
+              width: `${tagMenuPosition.width}px`,
+              maxHeight: `${tagMenuPosition.maxHeight}px`
+            }}
+          >
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <div className="text-[12px] font-bold uppercase tracking-[0.14em] text-[#78D27F]">Tags</div>
+              {selectedTags.length > 0 ? (
+                <button
+                  type="button"
+                  onClick={() => setSelectedTags([])}
+                  className="rounded-md px-2 py-1 text-xs font-bold text-[#8B949E] transition-colors hover:bg-[#25272F] hover:text-[#F4F4F5]"
+                >
+                  クリア
+                </button>
+              ) : null}
+            </div>
+
+            <div className="max-h-60 space-y-1 overflow-y-auto pr-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+              {selectableTags.length > 0 ? (
+                selectableTags.map((tag) => {
+                  const selected = selectedTags.includes(tag);
+                  return (
+                    <button
+                      key={tag}
+                      type="button"
+                      onClick={() => toggleTag(tag)}
+                      className={clsx(
+                        "flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-left text-sm font-bold transition-colors",
+                        selected ? "bg-[#1F3423] text-[#78D27F]" : "text-[#D7DEE8] hover:bg-[#171B20]"
+                      )}
+                    >
+                      <span className="truncate">{tag}</span>
+                      {selected ? <Check className="h-4 w-4 shrink-0" /> : null}
+                    </button>
+                  );
+                })
+              ) : (
+                <div className="rounded-lg border border-dashed border-[#34363D] px-3 py-4 text-center text-sm font-semibold text-[#8B949E]">
+                  タグはまだありません
+                </div>
+              )}
+            </div>
+          </div>,
+          document.body
+        )
+      : null;
+
   const frequencyMenu =
     isFrequencyMenuOpen && frequencyMenuPosition
       ? createPortal(
           <div
             ref={frequencyMenuRef}
-            className="fixed z-[70] overflow-hidden rounded-2xl border border-[#20242A] bg-[#111418] p-3 shadow-[0_24px_60px_rgba(0,0,0,0.48)]"
+            className="fixed z-[100] overflow-hidden rounded-2xl border border-[#20242A] bg-[#111418] p-3 shadow-[0_24px_60px_rgba(0,0,0,0.48)]"
             style={{
               top: `${frequencyMenuPosition.top}px`,
               left: `${frequencyMenuPosition.left}px`,
@@ -274,8 +361,8 @@ export default function TaskWorkflowModal({ availableTags = [], onSave, onClose 
               maxHeight: `${frequencyMenuPosition.maxHeight}px`
             }}
           >
-            <div className="mb-2 flex items-center gap-2 text-[12px] font-bold uppercase tracking-[0.14em] text-[#5ED890]">
-              <span className="h-2 w-2 rounded-full bg-[#5ED890]" />
+            <div className="mb-2 flex items-center gap-2 text-[12px] font-bold uppercase tracking-[0.14em] text-[#78D27F]">
+              <span className="h-2 w-2 rounded-full bg-[#78D27F]" />
               Frequency
             </div>
             {FREQUENCY_OPTIONS.map((option) => (
@@ -288,7 +375,7 @@ export default function TaskWorkflowModal({ availableTags = [], onSave, onClose 
                 }}
                 className={clsx(
                   "mb-1 w-full rounded-xl px-3 py-2 text-left text-sm font-semibold transition-colors last:mb-0",
-                  frequency === option.value ? "bg-[#193728] text-[#5ED890]" : "text-[#F7F7F8] hover:bg-[#171B20]"
+                  frequency === option.value ? "bg-[#1F3423] text-[#78D27F]" : "text-[#F7F7F8] hover:bg-[#171B20]"
                 )}
               >
                 {option.label}
@@ -304,7 +391,7 @@ export default function TaskWorkflowModal({ availableTags = [], onSave, onClose 
       ? createPortal(
           <div
             ref={startDatePickerRef}
-            className="fixed z-[70] overflow-hidden rounded-2xl border border-[#20242A] bg-[#111418] shadow-[0_24px_60px_rgba(0,0,0,0.48)]"
+            className="fixed z-[100] overflow-hidden rounded-2xl border border-[#20242A] bg-[#111418] shadow-[0_24px_60px_rgba(0,0,0,0.48)]"
             style={{
               top: `${datePickerPosition.top}px`,
               left: `${datePickerPosition.left}px`,
@@ -354,7 +441,7 @@ export default function TaskWorkflowModal({ availableTags = [], onSave, onClose 
                       "flex h-9 items-center justify-center rounded-xl text-sm transition-colors",
                       day.inMonth ? "text-[#F4F4F5] hover:bg-[#25272F]" : "text-[#52525B] hover:bg-[#25272F]",
                       day.isToday && "border border-[#52525B]",
-                      day.isSelected && "bg-[#0CCB8E] text-white hover:bg-[#0CCB8E]"
+                      day.isSelected && "bg-[#60B964] text-white hover:bg-[#60B964]"
                     )}
                   >
                     {day.date.getDate()}
@@ -382,9 +469,9 @@ export default function TaskWorkflowModal({ availableTags = [], onSave, onClose 
         )
       : null;
 
-  return (
+  return createPortal(
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 p-4 backdrop-blur-sm"
+      className="fixed inset-0 z-[90] flex items-center justify-center bg-black/55 p-4 backdrop-blur-sm"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) {
           onClose();
@@ -392,7 +479,7 @@ export default function TaskWorkflowModal({ availableTags = [], onSave, onClose 
       }}
     >
       <div
-        className="relative flex max-h-[calc(100vh-32px)] w-full max-w-2xl flex-col overflow-hidden rounded-lg border border-[#34363D] bg-[#1C1D22] shadow-2xl"
+        className="relative flex max-h-[calc(100vh-32px)] w-full max-w-3xl flex-col overflow-hidden rounded-xl border border-[#34363D] bg-[#1C1D22] shadow-[0_28px_90px_rgba(0,0,0,0.52)]"
         onMouseDown={(event) => event.stopPropagation()}
       >
         <button
@@ -403,40 +490,33 @@ export default function TaskWorkflowModal({ availableTags = [], onSave, onClose 
           <X className="h-5 w-5" />
         </button>
 
-        <div className="shrink-0 border-b border-[#34363D] px-7 py-6">
-          <div className="mb-2 inline-flex items-center gap-2 rounded-full bg-[#25272F] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-[#A1A1AA]">
-            <Repeat className="h-3.5 w-3.5" />
-            Workflow
-          </div>
-          <h2 className="text-2xl font-semibold text-[#F4F4F5]">未配置タスクを自動で追加</h2>
+        <div className="shrink-0 border-b border-[#34363D] px-7 py-5">
+          <h2 className="text-2xl font-bold text-[#F4F4F5]">{workflow ? "ワークフローを編集" : "ワークフロー"}</h2>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto px-7 py-6">
-          <div className="grid gap-6 md:grid-cols-[1.2fr_0.8fr]">
+        <div className="min-h-0 flex-1 overflow-y-auto px-7 py-6 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <div className="grid gap-5 md:grid-cols-[1.1fr_0.9fr]">
             <div className="space-y-5">
-              <section className="rounded-lg border border-[#34363D] bg-[#15161A] p-4">
-                <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-[#F4F4F5]">
-                  <Sparkles className="h-4 w-4 text-[#A1A1AA]" />
-                  追加するタスク
-                </div>
+              <section className="rounded-xl border border-[#34363D] bg-[#15161A] p-5">
+                <div className="mb-4 text-sm font-bold text-[#F4F4F5]">作成するタスク</div>
 
                 <div className="space-y-4">
-                  <PickerField label="ワークフロー名">
-                    <input
-                      value={workflowName}
-                      onChange={(event) => setWorkflowName(event.target.value)}
-                      placeholder="例: 毎週のレビューを追加"
-                      className="w-full rounded-md border border-[#34363D] bg-[#202229] px-3 py-2.5 text-sm text-[#F4F4F5] outline-none transition placeholder:text-[#71717A] focus:border-[#0CCB8E]"
-                    />
-                  </PickerField>
-
                   <PickerField label="タスク名">
                     <input
                       autoFocus
                       value={title}
                       onChange={(event) => setTitle(event.target.value)}
                       placeholder="例: 週次レビューをまとめる"
-                      className="w-full rounded-md border border-[#34363D] bg-[#202229] px-3 py-2.5 text-sm text-[#F4F4F5] outline-none transition placeholder:text-[#71717A] focus:border-[#0CCB8E]"
+                      className="w-full rounded-md border border-[#34363D] bg-[#202229] px-3 py-2.5 text-sm text-[#F4F4F5] outline-none transition placeholder:text-[#71717A] focus:border-[#60B964]"
+                    />
+                  </PickerField>
+
+                  <PickerField label="ワークフロー名">
+                    <input
+                      value={workflowName}
+                      onChange={(event) => setWorkflowName(event.target.value)}
+                      placeholder="空ならタスク名を使います"
+                      className="w-full rounded-md border border-[#34363D] bg-[#202229] px-3 py-2.5 text-sm text-[#F4F4F5] outline-none transition placeholder:text-[#71717A] focus:border-[#60B964]"
                     />
                   </PickerField>
 
@@ -446,33 +526,40 @@ export default function TaskWorkflowModal({ availableTags = [], onSave, onClose 
                       onChange={(event) => setDescription(event.target.value)}
                       rows={4}
                       placeholder="追加されたときの初期メモ"
-                      className="w-full rounded-md border border-[#34363D] bg-[#202229] px-3 py-2.5 text-sm text-[#F4F4F5] outline-none transition placeholder:text-[#71717A] focus:border-[#0CCB8E]"
+                      className="w-full rounded-md border border-[#34363D] bg-[#202229] px-3 py-2.5 text-sm text-[#F4F4F5] outline-none transition placeholder:text-[#71717A] focus:border-[#60B964]"
                     />
                   </PickerField>
 
-                  <PickerField label="タグ">
-                    <input
-                      value={tagsInput}
-                      onChange={(event) => setTagsInput(event.target.value)}
-                      placeholder="カンマ区切りで入力"
-                      className="w-full rounded-md border border-[#34363D] bg-[#202229] px-3 py-2.5 text-sm text-[#F4F4F5] outline-none transition placeholder:text-[#71717A] focus:border-[#0CCB8E]"
-                    />
-                  </PickerField>
-
-                  {suggestedTags.length > 0 ? (
-                    <div className="flex flex-wrap gap-2">
-                      {suggestedTags.map((tag) => (
-                        <button
-                          key={tag}
-                          type="button"
-                          onClick={() => setTagsInput((prev) => (prev.trim() ? `${prev}, ${tag}` : tag))}
-                          className="rounded-full border border-[#34363D] bg-[#202229] px-3 py-1 text-xs font-medium text-[#A1A1AA] transition hover:border-[#0CCB8E] hover:text-[#F4F4F5]"
-                        >
-                          {tag}
-                        </button>
-                      ))}
-                    </div>
-                  ) : null}
+                  <div>
+                    <div className="mb-1.5 text-xs font-medium text-[#A1A1AA]">タグ</div>
+                    <button
+                      ref={tagButtonRef}
+                      type="button"
+                      onClick={() => {
+                        setIsTagMenuOpen((prev) => !prev);
+                        setIsFrequencyMenuOpen(false);
+                        setIsDatePickerOpen(false);
+                      }}
+                      className="flex min-h-[46px] w-full items-center justify-between gap-3 rounded-md border border-[#34363D] bg-[#202229] px-3 py-2 text-left transition-colors hover:border-[#52525B] focus:border-[#60B964] focus:outline-none"
+                    >
+                      <div className="flex min-w-0 flex-1 flex-wrap gap-2">
+                        {selectedTags.length > 0 ? (
+                          selectedTags.map((tag) => (
+                            <span
+                              key={tag}
+                              className="inline-flex max-w-[150px] items-center rounded-full bg-[#1F3423] px-2.5 py-1 text-xs font-bold text-[#78D27F]"
+                            >
+                              <span className="truncate">{tag}</span>
+                            </span>
+                          ))
+                        ) : (
+                          <span className="text-sm font-semibold text-[#71717A]">タグを選択</span>
+                        )}
+                      </div>
+                      <ChevronDown className={clsx("h-4 w-4 shrink-0 text-[#A1A1AA] transition-transform", isTagMenuOpen && "rotate-180")} />
+                    </button>
+                    {tagMenu}
+                  </div>
 
                   <div>
                     <div className="mb-1.5 text-xs font-medium text-[#A1A1AA]">カードカラー</div>
@@ -495,11 +582,8 @@ export default function TaskWorkflowModal({ availableTags = [], onSave, onClose 
             </div>
 
             <div className="space-y-5">
-              <section className="rounded-lg border border-[#34363D] bg-[#15161A] p-4">
-                <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-[#F4F4F5]">
-                  <CalendarDays className="h-4 w-4 text-[#A1A1AA]" />
-                  追加タイミング
-                </div>
+              <section className="rounded-xl border border-[#34363D] bg-[#15161A] p-5">
+                <div className="mb-4 text-sm font-bold text-[#F4F4F5]">スケジュール</div>
 
                 <div className="space-y-4">
                   <PickerField label="頻度">
@@ -553,7 +637,7 @@ export default function TaskWorkflowModal({ availableTags = [], onSave, onClose 
                               onClick={() => toggleWeekday(option.value)}
                               className={`rounded-full border px-3 py-2 text-sm font-medium transition ${
                                 selected
-                                  ? "border-[#0CCB8E] bg-[#0CCB8E] text-white"
+                                  ? "border-[#60B964] bg-[#60B964] text-white"
                                   : "border-[#34363D] bg-[#202229] text-[#A1A1AA] hover:border-[#52525B] hover:text-[#F4F4F5]"
                               }`}
                             >
@@ -583,7 +667,7 @@ export default function TaskWorkflowModal({ availableTags = [], onSave, onClose 
                                 className={clsx(
                                   "rounded-xl px-0 py-2 text-sm font-medium transition-colors",
                                   selected
-                                    ? "bg-[#0CCB8E] text-white shadow-sm"
+                                    ? "bg-[#60B964] text-white shadow-sm"
                                     : "bg-[#15161A] text-[#A1A1AA] hover:bg-[#25272F] hover:text-[#F4F4F5]"
                                 )}
                               >
@@ -634,7 +718,7 @@ export default function TaskWorkflowModal({ availableTags = [], onSave, onClose 
                               className={clsx(
                                 "rounded-full px-3 py-2 text-sm font-medium transition-colors",
                                 selected
-                                  ? "bg-[#0CCB8E] text-white shadow-sm"
+                                  ? "bg-[#60B964] text-white shadow-sm"
                                   : "bg-[#15161A] text-[#A1A1AA] hover:bg-[#25272F] hover:text-[#F4F4F5]"
                               )}
                             >
@@ -648,17 +732,11 @@ export default function TaskWorkflowModal({ availableTags = [], onSave, onClose 
                 </div>
               </section>
 
-              <section className="rounded-2xl border border-dashed border-[#34363D] bg-[#15161A] p-4">
-                <div className="text-xs font-semibold uppercase tracking-[0.18em] text-[#71717A]">Preview</div>
-                <div className="mt-2 text-sm font-semibold text-[#F4F4F5]">{workflowName.trim() || title.trim() || "新しいワークフロー"}</div>
-                <div className="mt-1 text-sm text-[#A1A1AA]">{previewLabel} に未配置タスクを追加</div>
-              </section>
             </div>
           </div>
         </div>
 
-        <div className="flex shrink-0 items-center justify-between border-t border-[#34363D] px-7 py-5">
-          <div className="text-xs text-[#A1A1AA]">あとから停止や削除もできます。</div>
+        <div className="flex shrink-0 items-center justify-end border-t border-[#34363D] px-7 py-4">
           <div className="flex items-center gap-3">
             <button
               type="button"
@@ -672,8 +750,10 @@ export default function TaskWorkflowModal({ availableTags = [], onSave, onClose 
               disabled={!canSave}
               onClick={() =>
                 onSave({
+                  id: workflow?.id,
                   name: workflowName.trim() || title.trim(),
-                  enabled: true,
+                  enabled: workflow?.enabled !== false,
+                  generatedRunKeys: workflow?.generatedRunKeys || [],
                   schedule: {
                     frequency,
                     startDate,
@@ -684,22 +764,23 @@ export default function TaskWorkflowModal({ availableTags = [], onSave, onClose 
                   template: {
                     title: title.trim(),
                     description: description.trim(),
-                    tags: splitTags(tagsInput),
+                    tags: selectedTags,
                     color,
                     dueOffsetDays
                   }
                 })
               }
-              className="rounded-xl bg-[#0CCB8E] px-5 py-2.5 text-sm font-medium text-white transition hover:bg-[#10B981] disabled:cursor-not-allowed disabled:opacity-50"
+              className="rounded-xl bg-[#60B964] px-5 py-2.5 text-sm font-bold text-[#06100D] transition hover:bg-[#54A85C] disabled:cursor-not-allowed disabled:opacity-50"
             >
-              ワークフローを作成
+              {workflow ? "保存" : "作成"}
             </button>
           </div>
         </div>
       </div>
 
       {datePicker}
-    </div>
+    </div>,
+    document.body
   );
 }
 
